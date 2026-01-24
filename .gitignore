@@ -1,0 +1,169 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# PyCharm / DataSpell
+.idea/
+*.iml
+.DataSpell/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Data Files (DO NOT COMMIT LARGE FILES)
+data/*.h5ad
+data/*.h5
+data/*.mtx
+data/*.tar.gz
+data/*.zip
+data/raw/
+data/processed/
+!data/.gitkeep
+!data/sample_visium.h5ad
+
+# Model Checkpoints (DO NOT COMMIT MODELS)
+models/*.pt
+models/*.pth
+models/*.bin
+models/*.safetensors
+models/cache/
+!models/.gitkeep
+
+# Outputs
+outputs/*.pdf
+outputs/*.png
+outputs/*.jpg
+outputs/*.json
+outputs/reports/
+outputs/figures/
+!outputs/.gitkeep
+!outputs/sample_report.pdf
+
+# Logs
+logs/
+*.log
+wandb/
+mlruns/
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+*~
+
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.cache
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Secrets (CRITICAL - NEVER COMMIT)
+.env.local
+.env.production
+secrets/
+*.key
+*.pem
+credentials.json
+config/secrets.yml
+
+# Large Files (GitHub has 100MB limit)
+*.h5ad
+*.h5
+*.ckpt
+*.tar.gz
+*.zip
+!data/sample_small.h5ad
+
+# Streamlit
+.streamlit/secrets.toml
+
+# HuggingFace Cache
+.huggingface/
+transformers_cache/
+
+# System Files
+Thumbs.db
+ehthumbs.db
+
+# Loki source code (external dependency)
+Loki/
+
+# Kaggle-specific
+kaggle.json
+competitions/
+submissions/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Type checking
+.dmypy.json
+dmypy.json
+
+# Profiling
+*.prof
+*.lprof

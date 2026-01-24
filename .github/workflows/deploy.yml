@@ -1,0 +1,22 @@
+name: Deploy to HuggingFace Spaces
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        lfs: true
+
+    - name: Push to HuggingFace Space
+      env:
+        HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      run: |
+        git remote add hf https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/medgemma-spatial
+        git push hf main --force
