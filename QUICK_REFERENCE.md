@@ -1,228 +1,300 @@
 # Quick Reference - MedGemma Spatial Project
 
-**Last Session**: 2026-01-24 ~4pm
-**Recovered**: 2026-01-24 evening
-**Status**: Week 1 Day 1 Complete ✅
+**Last Session**: 2026-01-24 Evening
+**Status**: Week 1 Day 2 Complete ✅
+**Critical Fix**: Spatial visualization corrected ✅
 
 ---
 
-## What Was Done Today
+## ⚡ WHAT JUST HAPPENED (Evening Session)
 
-### ✅ Scanpy Baseline Enhanced with Spatial Analysis
+### Problem Identified by User
+Spatial tissue visualizations showed tissue images but **NO cluster overlays** - the plots were blank/wrong!
 
-**Notebook**: `notebooks/01_scanpy_baseline.ipynb`
+### Root Cause
+- Missing/wrong Squidpy parameters in `sq.pl.spatial_scatter()` calls
+- Used `img_key` instead of `img_res_key`
+- Used `alpha` for image instead of `img_alpha`
+- Barcode suffix handling was incorrect
 
-**New Features Added**:
-1. Squidpy import
-2. Spatial coordinates loading (tissue_positions_list.csv)
-3. Spatial neighbor graphs (hexagonal lattice)
-4. Proper Moran's I calculation (100 HVGs, permutation testing)
-5. 4-panel spatial tissue visualization
-6. Co-occurrence/niche enrichment analysis
-7. Enhanced JSON export with spatial statistics
-
-**Key Outputs**:
-- `outputs/scanpy_features_spatial.json` - Spatial features for MedGemma
-- `outputs/spatial_tissue_overview.png` - Tissue visualizations
-- `outputs/spatial_cooccurrence.png` - Co-occurrence heatmaps
+### Solution Implemented
+✅ Created `01_scanpy_baseline_CORRECTED.ipynb` with proper Squidpy parameters
+✅ Validated with `test_spatial_viz.py` (ran successfully in 60 sec)
+✅ Generated corrected outputs showing clusters overlaid on tissue
+✅ Documented all fixes in `CORRECTED_NOTEBOOK_SUMMARY.md`
+✅ Committed to git (commit 4f5425b)
 
 ---
 
-## Quick Commands
+## 📂 File Status
 
-### Run Enhanced Notebook
+### Notebooks (use CORRECTED version!)
+- ✅ `notebooks/01_scanpy_baseline_CORRECTED.ipynb` - **USE THIS ONE** (spatial viz fixed)
+- ⚠️ `notebooks/01_scanpy_baseline.ipynb` - Original (has broken spatial plots)
+- ✅ `notebooks/test_spatial_viz.py` - Validated working code
+- 📖 `notebooks/CORRECTED_NOTEBOOK_SUMMARY.md` - Detailed explanation of fixes
+
+### Outputs (CORRECTED versions)
+- ✅ `outputs/spatial_tissue_overview_CORRECTED.png` (3.0 MB) - Clusters now visible on tissue!
+- ✅ `outputs/scanpy_features_spatial_CORRECTED.json` (3.6 KB) - Ready for MedGemma
+- 📊 Key results: 9 clusters, 53 spatial genes, ISG15 top gene (Moran's I = 0.57)
+
+---
+
+## 🚀 Quick Start
+
+### Run the Corrected Notebook
 ```bash
 conda activate medgemma
-cd notebooks
-jupyter notebook 01_scanpy_baseline.ipynb
+cd /Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/notebooks
+jupyter notebook 01_scanpy_baseline_CORRECTED.ipynb
 ```
 
-### Validate Results
-```bash
-cd notebooks
-python validate_spatial_enhancements.py
-```
+Then: **Kernel → Restart & Run All**
 
-### Check Outputs
-```bash
-ls -lh outputs/
-```
+### Expected Output
+You should see **4-panel spatial visualization** with:
+1. **Colored clusters** overlaid on H&E tissue image
+2. **Total counts** gradient showing transcript abundance
+3. **ISG15 expression** (immune marker) in red
+4. **Genes detected** in blue
+
+If you see colored spots on tissue = SUCCESS! ✅
 
 ---
 
-## What's Next
+## 🔧 Technical Details
 
-### Immediate: Test the Notebook
-1. Run `01_scanpy_baseline.ipynb` end-to-end
-2. Validate outputs with `validate_spatial_enhancements.py`
-3. Verify spatial plots show tissue structure
-
-### Next Session: MedGemma Integration (Day 3)
-Create `02_medgemma_integration.ipynb`:
-- Load spatial features JSON
-- Load MedGemma-4b-it (4-bit quantized)
-- Generate 200-word clinical pathology reports
-- Test on M1 Mac (<32GB memory)
-
----
-
-## File Structure
-
-```
-medgemma/
-├── CLAUDE.md                               # Project master guide
-├── QUICK_REFERENCE.md                      # This file
-├── notebooks/
-│   ├── 01_scanpy_baseline.ipynb           # ✅ ENHANCED with spatial
-│   ├── SPATIAL_ENHANCEMENT_GUIDE.md       # Enhancement documentation
-│   ├── NEXT_STEPS.md                      # Detailed next steps
-│   ├── validate_spatial_enhancements.py   # Validation script
-│   └── README.md                          # Notebook overview
-├── data/sample/
-│   ├── Visium_Human_Breast_Cancer_filtered_feature_bc_matrix.h5
-│   └── spatial/
-│       ├── tissue_positions_list.csv
-│       ├── tissue_hires_image.png
-│       └── scalefactors_json.json
-└── outputs/
-    ├── scanpy_features_spatial.json       # ✅ NEW: Spatial features
-    ├── spatial_tissue_overview.png        # ✅ NEW: Tissue viz
-    └── spatial_cooccurrence.png           # ✅ NEW: Co-occurrence
-```
-
----
-
-## Key Changes to Notebook
-
-### Cell 2: Imports (Updated)
+### Correct Squidpy Parameters
 ```python
-import squidpy as sq  # ADDED
+sq.pl.spatial_scatter(
+    adata,
+    library_id=library_id,      # CRITICAL: Must match adata.uns['spatial'] key
+    color='leiden',              # What to visualize
+    img=True,                    # ✅ Show tissue image
+    img_res_key='hires',        # ✅ Use high-res image (NOT img_key!)
+    img_alpha=0.5,              # ✅ Tissue transparency (NOT alpha!)
+    alpha=0.8,                   # Spot transparency
+    size=1.5,                    # Spot size
+    frameon=False                # Cleaner appearance
+)
 ```
 
-### Cell 2B: Load Spatial Coordinates (NEW)
-- Loads tissue_positions_list.csv
-- Adds `adata.obsm['spatial']`
-- Loads tissue image to `adata.uns['spatial']`
+### Key Fixes Applied
+1. Cell 9: Removed incorrect barcode `-1` stripping
+2. Cell 21: Changed `seurat_v3` → `seurat` (no extra dependencies)
+3. Cells 35, 37: Added `img=True, img_res_key='hires', img_alpha=0.5`
+4. All plots: Added `frameon=False` for cleaner appearance
 
-### Cell 7B: Spatial Neighbor Graph (NEW)
-- Builds spatial graph with Squidpy
-- Calculates Moran's I for 100 HVGs
-- Stores in `adata.uns['moranI']`
-
-### Cell 8B: Spatial Tissue Plots (NEW)
-- 4-panel visualization on tissue
-- Clusters, counts, top gene, genes detected
-
-### Cell 9B: Co-occurrence Analysis (NEW)
-- Spatial co-occurrence matrix
-- Enrichment heatmap (log2 obs/exp)
-
-### Cell 10: JSON Export (ENHANCED)
-- Added `spatial_statistics` section
-- Moran's I top genes + stats
-- Co-occurrence patterns
+### Verified Results
+- Runtime: ~60 seconds
+- Memory: 3.2 GB peak
+- 4,895 spots, 9 clusters, 53 significant spatial genes
+- Top spatial gene: ISG15 (Moran's I = 0.57)
 
 ---
 
-## Validation Checklist
+## 📊 Analysis Results Summary
 
-After running notebook, verify:
-- [ ] Runtime <5 minutes
-- [ ] Memory <16GB
-- [ ] `adata.obsm['spatial']` exists
-- [ ] `adata.obsp['spatial_connectivities']` exists
-- [ ] `adata.uns['moranI']` exists
-- [ ] Moran's I values between -1 and 1
-- [ ] Spatial plots show tissue structure
-- [ ] JSON contains `spatial_statistics` section
-- [ ] Co-occurrence matrix is symmetric
+### Spatial Statistics
+- **Spots in tissue**: 4,895
+- **Genes analyzed**: 21,351 (filtered from 36,601)
+- **Highly variable genes**: 2,000
+- **Clusters identified**: 9
 
----
+### Top Spatially Autocorrelated Genes
+1. **ISG15** (Moran's I = 0.568) - Interferon-stimulated gene, immune activation
+2. **C1QA** (Moran's I = 0.522) - Complement pathway, macrophages
+3. **C1QB** (Moran's I = 0.503) - Complement pathway
+4. **CD52** (Moran's I = 0.402) - Immune cells
+5. **C1QC** (Moran's I = 0.346) - Complement pathway
 
-## Common Issues & Fixes
-
-### Barcode Mismatch
-```python
-# Add to Cell 2B:
-spatial_coords.index = spatial_coords.index.str.replace('-1', '')
-```
-
-### Memory Error
-```python
-# Reduce genes in Cell 7B:
-top_hvgs = adata.var_names[adata.var['highly_variable']][:50]
-```
-
-### No Tissue Image
-```python
-# Verify in Cell 2B:
-print(adata.uns['spatial']['Visium_Human_Breast_Cancer']['images']['hires'].shape)
-```
+### Spatial Co-occurrence Patterns
+- Cluster 1 ↔ Cluster 3: 1,293 co-occurrences
+- Cluster 2 ↔ Cluster 1: 876 co-occurrences
+- Cluster 0 ↔ Cluster 6: 654 co-occurrences
 
 ---
 
-## Progress Tracking
+## 📅 Progress Timeline
 
 ### Week 1 Timeline
-- ✅ Day 1-2: Scanpy baseline with spatial analysis
-- ⏳ Day 3-4: MedGemma integration
-- ⏳ Day 5-6: Optional Loki/NicheFormer (time-boxed)
-- ⏳ Day 7: Week 1 checkpoint
+- ✅ Day 1-2 AM: Scanpy baseline created
+- ✅ Day 2 PM: Spatial visualization issue identified & **FIXED**
+- ⏳ Day 3: MedGemma integration (next step!)
+- ⏳ Day 4-5: Test and refine reports
+- ⏳ Day 6-7: Week 1 checkpoint
 
 ### Milestones
-- ✅ Spatial transcriptomics pipeline working
+- ✅ Spatial transcriptomics pipeline working with **correct visualizations**
+- ✅ Spatial features JSON ready for MedGemma
 - ⏳ Clinical report generation working
 - ⏳ 3+ samples processed successfully
 
 ---
 
-## Git Status
+## 🎯 Next Steps (Day 3)
 
-**Latest Commit**: `53d4069 - Add spatial transcriptomics analysis to Scanpy baseline`
+### Create MedGemma Integration Notebook
+```bash
+# Task for next session:
+# Create: notebooks/02_medgemma_integration.ipynb
 
-**Committed**:
-- Enhanced notebook with spatial analysis
-- Spatial enhancement guide
-- Validation script
-- Next steps document
+# Requirements:
+# 1. Load scanpy_features_spatial_CORRECTED.json
+# 2. Load MedGemma-4b-it model (4-bit quantized)
+# 3. Design prompt template for clinical reports
+# 4. Generate 200-word pathology report
+# 5. Test on M1 Mac (<32GB memory)
+```
 
-**Untracked**:
-- This quick reference (add to next commit)
+### Input Available
+- `outputs/scanpy_features_spatial_CORRECTED.json` contains:
+  - 9 spatial clusters with statistics
+  - 53 significant spatial genes
+  - Moran's I scores for autocorrelation
+  - Co-occurrence patterns between clusters
+  - QC metrics
 
----
-
-## Session Recovery Notes
-
-**Lost Session**: ~4pm today
-**Context Recovered**:
-- Found last prompt in CLAUDE.md context
-- Notebook was created but spatial enhancements not added
-- Enhancement guide was prepared but not executed
-
-**Actions Taken**:
-- Added all spatial enhancements to notebook
-- Created validation script
-- Created next steps guide
-- Committed changes to git
-
-**No Data Loss**: All work recovered successfully ✅
+### Expected Output
+Clinical pathology report example:
+> "Spatial transcriptomic analysis of breast cancer tissue reveals distinct spatial organization with 9 microenvironmental niches. Elevated immune activation markers (ISG15, Moran's I=0.57) demonstrate strong spatial clustering, co-localizing with complement pathway components (C1QA/C1QB/C1QC). This pattern suggests organized immune infiltration within the tumor microenvironment..."
 
 ---
 
-## Copy-Paste for Next Session
+## 🔍 Validation Checklist
 
-**If starting fresh tomorrow**:
+### Before Moving to Day 3
+- [ ] Run `01_scanpy_baseline_CORRECTED.ipynb` end-to-end
+- [ ] Verify spatial tissue plots show **colored clusters on tissue**
+- [ ] Check that `spatial_tissue_overview_CORRECTED.png` looks correct
+- [ ] Confirm JSON contains spatial_statistics section
+- [ ] Verify 53 significant genes in Moran's I results
+
+### If Issues Occur
+1. Check Squidpy version: `squidpy==1.5.0`
+2. Check anndata version: `anndata==0.10.9` (NOT 0.11.3!)
+3. Check scanpy version: `scanpy==1.10.2`
+4. Read `CORRECTED_NOTEBOOK_SUMMARY.md` for troubleshooting
+
+---
+
+## 🐛 Common Issues & Fixes
+
+### Spatial plots show tissue but no clusters
+**Problem**: Missing Squidpy parameters
+**Fix**: Use `img=True, img_res_key='hires', img_alpha=0.5` (see CORRECTED notebook)
+
+### Barcode mismatch (0 spots matched)
+**Problem**: Incorrectly stripping `-1` suffix
+**Fix**: Don't modify barcodes, they already match (fixed in Cell 9)
+
+### scikit-misc import error
+**Problem**: Using `flavor='seurat_v3'`
+**Fix**: Use `flavor='seurat'` instead (fixed in Cell 21)
+
+### Memory error during analysis
+**Problem**: Too many genes for Moran's I
+**Fix**: Reduce to top 50-100 HVGs instead of all
+
+---
+
+## 📝 Git Status
+
+**Latest Commit**: `4f5425b - Fix spatial visualization: Correct Squidpy plotting parameters`
+
+**Key Changes**:
+- Created corrected notebook with proper Squidpy parameters
+- Created test script validating working code
+- Documented all fixes comprehensively
+- Removed broken `run_baseline.py`
+
+**Branch**: main
+**Remote**: None configured yet
+
+---
+
+## 💡 Key Learnings
+
+### Squidpy Spatial Plotting
+The `library_id` parameter is **CRITICAL** - it must match the key in `adata.uns['spatial']`. Without it or with wrong parameters, you get tissue images but no overlays.
+
+### Parameter Naming
+- ✅ `img_res_key` (NOT `img_key`) - which resolution to use
+- ✅ `img_alpha` (NOT `alpha` for image) - tissue transparency
+- ✅ `alpha` - spot transparency only
+
+### Barcode Handling
+10x Visium barcodes include `-1` suffix by default. Don't strip it unless you have a specific reason!
+
+### HVG Selection
+- `flavor='seurat'` - Standard method, no extra dependencies
+- `flavor='seurat_v3'` - Requires scikit-misc package
+
+---
+
+## 🎓 Educational Value
+
+The corrected notebook is designed for learning spatial transcriptomics:
+- Markdown cells explain **what** each step does
+- Code cells show **how** to implement it
+- Comments highlight **why** certain parameters matter
+- Common pitfalls are documented
+
+Perfect for job interviews: demonstrates spatial analysis expertise with proper documentation!
+
+---
+
+## 📞 Quick Commands
+
+### Check environment
+```bash
+conda activate medgemma
+python -c "import scanpy, squidpy, anndata; print(f'scanpy {scanpy.__version__}, squidpy {squidpy.__version__}, anndata {anndata.__version__}')"
+```
+
+### Run corrected analysis
+```bash
+conda activate medgemma
+cd /Users/sriharshameghadri/randomAIProjects/kaggle/medGemma
+python notebooks/test_spatial_viz.py
+```
+
+### View outputs
+```bash
+open outputs/spatial_tissue_overview_CORRECTED.png
+cat outputs/scanpy_features_spatial_CORRECTED.json | jq '.spatial_statistics.morans_i.top_genes'
+```
+
+---
+
+## ✅ Session Complete!
+
+**What was accomplished**:
+1. ✅ Identified spatial visualization bug (user feedback)
+2. ✅ Diagnosed root cause (wrong Squidpy parameters)
+3. ✅ Created corrected notebook with educational content
+4. ✅ Validated with working test script
+5. ✅ Generated correct outputs (clusters on tissue!)
+6. ✅ Documented everything comprehensively
+7. ✅ Committed to git
+
+**Ready for next session**: MedGemma integration (Day 3)
+
+**Copy-paste for next session**:
 ```
 Hi! Continuing MedGemma spatial transcriptomics project.
 
-Status: Week 1 Day 1 complete - Scanpy baseline with spatial analysis done
-Next: Week 1 Day 3 - MedGemma integration
+Status: Week 1 Day 2 complete - Spatial visualization FIXED ✅
+Files ready:
+- notebooks/01_scanpy_baseline_CORRECTED.ipynb (working spatial viz)
+- outputs/scanpy_features_spatial_CORRECTED.json (53 spatial genes)
 
-Please read QUICK_REFERENCE.md and NEXT_STEPS.md to get context.
+Next: Create 02_medgemma_integration.ipynb for clinical report generation
 
-Ready to create 02_medgemma_integration.ipynb for clinical report generation.
+Please check QUICK_REFERENCE.md for full context.
 ```
 
 ---
 
-**You're all caught up! Ready to test the enhanced notebook. 🚀**
+**You're all set! The spatial visualization issue is completely resolved. 🎉**
