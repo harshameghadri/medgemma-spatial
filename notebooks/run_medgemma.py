@@ -11,11 +11,14 @@ Usage:
 import json
 import torch
 import argparse
+import os
 from pathlib import Path
 from datetime import datetime
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import warnings
 warnings.filterwarnings('ignore')
+
+os.environ['HF_TOKEN'] = 'HF_TOKEN_REDACTED'
 
 
 def load_analysis_data(spatial_path, celltype_path):
@@ -40,13 +43,14 @@ def load_medgemma_model(model_id="google/medgemma-4b-it"):
 
     print(f"Loading {model_id} with 4-bit quantization...")
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, token=os.environ.get('HF_TOKEN'))
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
         quantization_config=quantization_config,
         device_map="auto",
-        trust_remote_code=True
+        trust_remote_code=True,
+        token=os.environ.get('HF_TOKEN')
     )
 
     print("Model loaded successfully")
