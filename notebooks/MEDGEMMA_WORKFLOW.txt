@@ -1,0 +1,333 @@
+MEDGEMMA CLINICAL REPORT GENERATION WORKFLOW
+================================================================================
+
+INPUT DATA SOURCES
+==================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Upstream Analysis Outputs                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. spatial_features.json                                                   │
+│     ├─ Dataset info (total_spots, total_genes, n_clusters)                 │
+│     ├─ Spatial clusters (cluster_0 to cluster_N with counts)               │
+│     ├─ Moran's I spatial autocorrelation                                    │
+│     │  └─ Top spatially variable genes (ISG15, C1QA, C1QB...)              │
+│     └─ QC metrics (mean_genes_per_spot, mean_counts, mt_percent)           │
+│                                                                              │
+│  2. cell_type_enhanced_summary.json                                         │
+│     ├─ Cell type statistics (total_spots, n_cell_types, confidence)        │
+│     ├─ Cell type composition (LummHR-SCGB, plasma_IgG, LummHR-major)       │
+│     ├─ Tumor-immune interface metrics (n_interface_spots, interface_pct)   │
+│     └─ Top marker genes per cell type (XBP1, GATA3, IGLC2, IGKC...)        │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                                      ↓
+
+PROMPT CONSTRUCTION
+===================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ create_clinical_prompt(spatial_data, celltype_data)                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Template Structure:                                                         │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. ROLE DEFINITION                                                     │  │
+│  │    "You are a board-certified pathologist..."                         │  │
+│  │                                                                        │  │
+│  │ 2. SPECIMEN DATA                                                       │  │
+│  │    - Total spots: 4895                                                │  │
+│  │    - Resolution: 10x Visium (55μm)                                    │  │
+│  │                                                                        │  │
+│  │ 3. CELL TYPE COMPOSITION                                               │  │
+│  │    - Luminal epithelial (HR+): 51.3%                                  │  │
+│  │      * LummHR-SCGB: 2512 spots                                        │  │
+│  │      * LummHR-major: 399 spots                                        │  │
+│  │      * Markers: XBP1, GATA3, H3F3A, PBX1, CD9                         │  │
+│  │    - Plasma cells (IgG+): 40.5%                                       │  │
+│  │      * Count: 1984 spots                                              │  │
+│  │      * Markers: IGLC2, IGKC, IGHG3, IGHG4, IGHG1                      │  │
+│  │                                                                        │  │
+│  │ 4. SPATIAL ORGANIZATION                                                │  │
+│  │    - Tumor-immune interface: 34.6%                                    │  │
+│  │    - Spatial clusters: 15 regions                                     │  │
+│  │    - Spatially variable genes: 53                                     │  │
+│  │      * Top genes: ISG15, C1QA, C1QB, CD52, C1QC                       │  │
+│  │                                                                        │  │
+│  │ 5. MOLECULAR FEATURES                                                  │  │
+│  │    - QC: 3525 genes/spot, 3.7% mitochondrial                          │  │
+│  │                                                                        │  │
+│  │ 6. INSTRUCTIONS                                                        │  │
+│  │    Generate report with:                                              │  │
+│  │    1. Diagnosis and tumor classification                              │  │
+│  │    2. Immune microenvironment assessment                              │  │
+│  │    3. Spatial organization patterns                                   │  │
+│  │    4. Clinical implications for treatment                             │  │
+│  │    5. Brief statement on analytical limitations                       │  │
+│  │                                                                        │  │
+│  │ CLINICAL PATHOLOGY REPORT:                                             │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Output: ~1200 character prompt, ~250 tokens                                │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                                      ↓
+
+MODEL INFERENCE
+===============
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ load_medgemma_model() + generate_report()                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Model Configuration:                                                        │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ Model: google/medgemma-4b-it                                          │  │
+│  │ Quantization: 4-bit NF4 (BitsAndBytes)                                │  │
+│  │ Device: Apple M1 MPS or CUDA or CPU                                   │  │
+│  │ Memory: ~11GB (4-bit) vs ~16GB (full precision)                       │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Generation Parameters:                                                      │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ max_new_tokens: 400 (~200 words)                                      │  │
+│  │ temperature: 0.7 (balanced creativity)                                │  │
+│  │ top_p: 0.9 (nucleus sampling)                                         │  │
+│  │ do_sample: True (stochastic generation)                               │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Process:                                                                    │
+│    1. Tokenize prompt → input_ids                                           │
+│    2. Generate tokens autoregressively                                      │
+│    3. Decode output_ids → text                                              │
+│    4. Extract report after "CLINICAL PATHOLOGY REPORT:"                     │
+│                                                                              │
+│  Performance:                                                                │
+│    - Model loading: ~30 seconds (one-time per session)                      │
+│    - Inference: ~15-30 seconds per report                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                                      ↓
+
+OUTPUT FORMATTING
+=================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ save_report(report, spatial_data, celltype_data, output_dir)                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Format 1: TXT Report (Human-readable)                                      │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ clinical_report_20260128_143000.txt                                   │  │
+│  │ ───────────────────────────────────────────────────────────────────── │  │
+│  │ SPATIAL TRANSCRIPTOMICS CLINICAL PATHOLOGY REPORT                     │  │
+│  │ ==================================================================     │  │
+│  │                                                                        │  │
+│  │ Date: 2026-01-28 14:30:00                                             │  │
+│  │ Analysis Method: 10x Genomics Visium + MedGemma-4b-it                 │  │
+│  │ Specimen Type: Breast Cancer Biopsy                                   │  │
+│  │                                                                        │  │
+│  │ REPORT:                                                                │  │
+│  │ ----------------------------------------------------------------       │  │
+│  │ DIAGNOSIS: Invasive breast carcinoma, hormone receptor-positive       │  │
+│  │ (HR+), luminal subtype with extensive plasma cell infiltration.       │  │
+│  │                                                                        │  │
+│  │ TUMOR CHARACTERISTICS: The specimen demonstrates 51.3% luminal        │  │
+│  │ epithelial cells expressing characteristic markers (XBP1, GATA3,      │  │
+│  │ H3F3A). Two distinct luminal subtypes identified...                   │  │
+│  │                                                                        │  │
+│  │ [... continued ~200 words ...]                                        │  │
+│  │ ==================================================================     │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Format 2: JSON Report (Machine-readable)                                   │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │ clinical_report_20260128_143000.json                                  │  │
+│  │ ───────────────────────────────────────────────────────────────────── │  │
+│  │ {                                                                      │  │
+│  │   "metadata": {                                                        │  │
+│  │     "timestamp": "2026-01-28T14:30:00",                                │  │
+│  │     "model": "google/medgemma-4b-it",                                  │  │
+│  │     "quantization": "4-bit (NF4)",                                     │  │
+│  │     "word_count": 215                                                  │  │
+│  │   },                                                                   │  │
+│  │   "clinical_report": "[Generated report text...]",                     │  │
+│  │   "input_data_summary": {                                              │  │
+│  │     "total_spots": 4895,                                               │  │
+│  │     "n_clusters": 15,                                                  │  │
+│  │     "n_spatially_variable_genes": 53,                                  │  │
+│  │     "cell_type_composition": {...},                                    │  │
+│  │     "tumor_immune_interface_pct": 34.6                                 │  │
+│  │   }                                                                    │  │
+│  │ }                                                                      │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+                                      ↓
+
+DOWNSTREAM APPLICATIONS
+========================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Next Steps in Pipeline                                                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Week 2: Refinement                                                          │
+│    ├─ Manual quality review                                                 │
+│    ├─ Prompt iteration                                                      │
+│    └─ Test on 3-5 diverse samples                                           │
+│                                                                              │
+│  Week 3: Deployment                                                          │
+│    ├─ Streamlit app integration                                             │
+│    │  ├─ File upload interface                                              │
+│    │  ├─ Real-time report generation                                        │
+│    │  └─ PDF export functionality                                           │
+│    ├─ Docker containerization                                               │
+│    └─ HuggingFace Spaces deployment                                         │
+│                                                                              │
+│  Week 4: Portfolio                                                           │
+│    ├─ Professional README                                                   │
+│    ├─ Demo video                                                            │
+│    ├─ Kaggle submission                                                     │
+│    └─ LinkedIn case study                                                   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+
+EXECUTION MODES
+================================================================================
+
+MODE 1: Interactive Notebook
+─────────────────────────────
+Command: jupyter notebook 04_medgemma_reports.ipynb
+
+Flow:
+  1. Load libraries → torch, transformers, json
+  2. Read data files → spatial_features.json, cell_type_summary.json
+  3. Configure model → BitsAndBytesConfig (4-bit)
+  4. Load MedGemma → AutoModelForCausalLM (~30 sec)
+  5. Create prompt → create_clinical_prompt()
+  6. Generate report → model.generate() (~15-30 sec)
+  7. Display report → print formatted text
+  8. Save outputs → TXT + JSON to outputs/
+  9. Check memory → psutil.Process().memory_info()
+
+Use Case: Exploration, education, manual analysis
+
+
+MODE 2: Command-Line Script
+────────────────────────────
+Command: python run_medgemma.py
+
+Flow:
+  1. Parse arguments → --spatial, --celltype, --output, --model
+  2. Validate inputs → check file existence
+  3. Load data → JSON parsing
+  4. Load model → with progress messages
+  5. Generate report → same as notebook
+  6. Save outputs → timestamped files
+  7. Report status → memory, completion
+
+Use Case: Batch processing, automation, pipeline integration
+
+
+MODE 3: Setup Verification
+───────────────────────────
+Command: python test_medgemma_setup.py
+
+Checks:
+  1. Python version → 3.10+
+  2. Dependencies → torch, transformers, bitsandbytes, accelerate
+  3. Data files → spatial_features.json, cell_type_summary.json
+  4. Memory → >12GB recommended
+  5. Model access → HuggingFace reachability
+  6. Tokenizer → small download test
+
+Use Case: Pre-flight validation, troubleshooting
+
+
+MODE 4: Prompt Preview
+───────────────────────
+Command: python example_prompt.py
+
+Flow:
+  1. Load data → JSON files only
+  2. Generate prompt → create_clinical_prompt()
+  3. Display prompt → full text
+  4. Show stats → character count, token estimate
+
+Use Case: Prompt iteration, debugging, no model loading
+
+
+MEMORY PROFILE
+================================================================================
+
+Component                          Memory Usage    Notes
+────────────────────────────────────────────────────────────────────────────
+Base Python + libraries            ~500 MB         Baseline
+Data loading (JSON)                ~50 MB          Minimal
+Tokenizer                          ~100 MB         Small
+Model (4-bit quantized)            ~8-10 GB        Main component
+Model (full precision)             ~15-16 GB       Without quantization
+Inference activations              ~500 MB         During generation
+Total (4-bit)                      ~11 GB          Well within 64GB
+Total (full precision)             ~17 GB          Would work but inefficient
+
+
+PERFORMANCE BENCHMARKS
+================================================================================
+
+Hardware: M1 Mac Max 64GB RAM
+
+Operation                          First Run       Subsequent
+────────────────────────────────────────────────────────────────────────────
+Model download (HuggingFace)       2-5 min         Cached
+Model loading                      30 sec          30 sec
+Data loading                       <1 sec          <1 sec
+Prompt creation                    <1 sec          <1 sec
+Inference (generate)               15-30 sec       15-30 sec
+Output formatting                  <1 sec          <1 sec
+Total                              5-6 min         45-60 sec
+
+Word count: ~200 words per report
+Token count: ~400 tokens generated
+
+
+ERROR HANDLING
+================================================================================
+
+Error Type                         Mitigation Strategy
+────────────────────────────────────────────────────────────────────────────
+FileNotFoundError                  Clear error message with expected paths
+OutOfMemoryError                   Suggest reducing max_new_tokens, close apps
+ImportError (dependencies)         List missing packages with install commands
+HuggingFace download timeout       Check internet, suggest retry, show status URL
+Model not found                    Verify model ID, check HF status
+Device not available (MPS/CUDA)    Automatic CPU fallback
+Invalid JSON                       Show file path and parse error location
+Low confidence data                Warning message, proceed with generation
+
+
+QUALITY ASSURANCE
+================================================================================
+
+Validation Step                    Implementation
+────────────────────────────────────────────────────────────────────────────
+Code syntax                        Python 3.10 compatible, no syntax errors
+Execution                          All scripts run without crashes
+Output format                      Valid TXT and JSON files created
+Memory constraints                 Usage <32GB (target met: ~11GB)
+Performance                        <60 sec per report (after model load)
+Clinical coherence                 Manual review (Week 2)
+Multi-sample consistency           Test on 3+ samples (Week 2)
+Integration                        Connects to upstream data sources
+
+
+================================================================================
+End of Workflow Diagram
+================================================================================
