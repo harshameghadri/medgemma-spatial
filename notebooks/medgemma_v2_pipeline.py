@@ -97,12 +97,16 @@ def generate_comparative_prompt(uncertainty_features: Dict, reference_cohort: Di
     morans = stage1.get('morans_i', {})
     entropy = stage1.get('spatial_entropy', {})
 
-    # Get signal strength distribution
+    # Get signal strength distribution with gene names
     if 'signal_strength' in morans:
-        strong_count = sum(1 for s in morans['signal_strength'] if s == 'STRONG')
-        moderate_count = sum(1 for s in morans['signal_strength'] if s == 'MODERATE')
-        weak_count = sum(1 for s in morans['signal_strength'] if s == 'WEAK')
+        strong_genes = [g for g, s in zip(morans.get('genes', []), morans['signal_strength']) if s == 'STRONG']
+        moderate_genes = [g for g, s in zip(morans.get('genes', []), morans['signal_strength']) if s == 'MODERATE']
+        weak_genes = [g for g, s in zip(morans.get('genes', []), morans['signal_strength']) if s == 'WEAK']
+        strong_count = len(strong_genes)
+        moderate_count = len(moderate_genes)
+        weak_count = len(weak_genes)
     else:
+        strong_genes, moderate_genes, weak_genes = [], [], []
         strong_count, moderate_count, weak_count = 0, 0, 0
 
     prompt = f"""You are a spatial pathology expert analyzing spatial transcriptomics data.
@@ -116,10 +120,16 @@ CRITICAL INSTRUCTIONS:
 
 === SPATIAL SIGNAL QUALITY ===
 - STRONG spatial signals: {strong_count} genes (p < 0.001, |I| > 0.3)
+  Top genes: {', '.join(strong_genes[:10]) if strong_genes else 'None'}
 - MODERATE signals: {moderate_count} genes (p < 0.05, |I| > 0.1)
+  Top genes: {', '.join(moderate_genes[:10]) if moderate_genes else 'None'}
 - WEAK/NONE signals: {weak_count} genes
 
 Spatial entropy: {entropy.get('mean_entropy', 'N/A'):.3f} (95% CI: [{entropy.get('ci_lower', 'N/A'):.3f}, {entropy.get('ci_upper', 'N/A'):.3f}])
+
+CRITICAL: You MUST cite these exact counts in your report:
+- {strong_count} STRONG signals
+- {moderate_count} MODERATE signals
 
 === REFERENCE PHENOTYPES (for comparison) ===
 """
@@ -332,8 +342,21 @@ def run_medgemma_v2_pipeline(
     stage3_output = generate_report_stage(model, tokenizer, stage3_prompt, max_tokens=300)
     print(f"  Generated {len(stage3_output)} characters")
 
-    # Combine outputs
+    # Combine outputs with de-duplication
+    # Split into sentences and remove exact duplicates while preserving order
+    def deduplicate_text(text: str) -> str:
+        """Remove duplicate sentences while preserving order."""
+        sentences = []
+        seen = set()
+        for line in text.split('\n'):
+            line = line.strip()
+            if line and line not in seen:
+                sentences.append(line)
+                seen.add(line)
+        return '\n'.join(sentences)
+
     combined_output = f"{stage2_output}\n\n{stage3_output}"
+    combined_output = deduplicate_text(combined_output)
 
     # Stage 6: Self-audit
     print("\n[6/8] STAGE 6: Self-Audit (Programmatic Validation)")

@@ -37,6 +37,9 @@ def detect_parroting(medgemma_output: str, input_features: Dict) -> Dict:
 
     input_numbers = extract_numbers(input_features)
 
+    # Whitelist common rounded numbers that aren't really parroting
+    WHITELISTED_NUMBERS = ['0', '1', '2', '3', '4', '5']
+
     # Check if exact numeric values appear in output
     for path, value in input_numbers:
         # Format number as it might appear in text
@@ -44,6 +47,11 @@ def detect_parroting(medgemma_output: str, input_features: Dict) -> Dict:
             # Check multiple precision levels
             for precision in [0, 1, 2, 3]:
                 formatted = f"{value:.{precision}f}"
+
+                # Skip whitelisted common numbers
+                if formatted in WHITELISTED_NUMBERS:
+                    continue
+
                 if formatted in medgemma_output:
                     violations.append({
                         'type': 'NUMERIC_PARROTING',
@@ -53,13 +61,18 @@ def detect_parroting(medgemma_output: str, input_features: Dict) -> Dict:
                         'severity': 'CRITICAL'
                     })
                     break
-        elif str(value) in medgemma_output:
-            violations.append({
-                'type': 'NUMERIC_PARROTING',
-                'path': path,
-                'value': value,
-                'severity': 'CRITICAL'
-            })
+        else:
+            # Skip whitelisted common integers
+            if str(value) in WHITELISTED_NUMBERS:
+                continue
+
+            if str(value) in medgemma_output:
+                violations.append({
+                    'type': 'NUMERIC_PARROTING',
+                    'path': path,
+                    'value': value,
+                    'severity': 'CRITICAL'
+                })
 
     # Check for generic phrases (canonical laundering)
     generic_phrases = [
