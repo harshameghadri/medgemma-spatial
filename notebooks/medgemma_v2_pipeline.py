@@ -82,6 +82,86 @@ def load_reference_cohort(tissue_type='breast_cancer'):
                 'immune_markers': ['CD79A', 'IGHG1', 'CD68'],
                 'description': 'Mixed B-cell and macrophage infiltration, intermediate response'
             }
+        },
+        'lung_cancer': {
+            'tls_positive': {
+                'tumor_immune_interface_pct': (50, 70),
+                'spatial_entropy': (0.7, 0.95),
+                'immune_markers': ['CD20', 'CD3D', 'CXCL13', 'CD79A'],
+                'description': 'Tertiary lymphoid structures, organized B/T cell aggregates'
+            },
+            'fibrotic': {
+                'tumor_immune_interface_pct': (10, 25),
+                'spatial_entropy': (0.15, 0.35),
+                'immune_markers': ['COL1A1', 'ACTA2', 'FAP', 'POSTN'],
+                'description': 'Dense fibrotic stroma, immune excluded by CAFs'
+            },
+            'neutrophil_high': {
+                'tumor_immune_interface_pct': (20, 40),
+                'spatial_entropy': (0.3, 0.5),
+                'immune_markers': ['S100A8', 'S100A9', 'CXCL8', 'IL1B'],
+                'description': 'Neutrophil/myeloid infiltration, pro-tumor inflammation'
+            }
+        },
+        'colon_cancer': {
+            'msi_high_immune': {
+                'tumor_immune_interface_pct': (60, 80),
+                'spatial_entropy': (0.8, 0.95),
+                'immune_markers': ['CD8A', 'CD3D', 'GZMB', 'LAG3', 'PDCD1'],
+                'description': 'MSI-high, intense lymphocyte infiltration, checkpoint high'
+            },
+            'immunogenic': {
+                'tumor_immune_interface_pct': (40, 60),
+                'spatial_entropy': (0.6, 0.8),
+                'immune_markers': ['IFNG', 'CXCL9', 'CD8A', 'IDO1'],
+                'description': 'IFN-gamma signature, active immune response'
+            },
+            'cold_mss': {
+                'tumor_immune_interface_pct': (5, 15),
+                'spatial_entropy': (0.1, 0.25),
+                'immune_markers': ['CD68', 'CD163', 'TGFB1'],
+                'description': 'MSS-typical, immune desert, suppressive macrophages'
+            }
+        },
+        'brain_glioma': {
+            'hypoxic_core': {
+                'tumor_immune_interface_pct': (2, 10),
+                'spatial_entropy': (0.05, 0.15),
+                'immune_markers': ['HIF1A', 'CA9', 'VEGFA', 'SLC2A1'],
+                'description': 'Hypoxic necrotic core, minimal immune infiltration'
+            },
+            'invasive_margin': {
+                'tumor_immune_interface_pct': (15, 30),
+                'spatial_entropy': (0.3, 0.5),
+                'immune_markers': ['CD68', 'SPP1', 'MKI67', 'VIM'],
+                'description': 'Infiltrative edge, macrophage-dominated, actively proliferating'
+            },
+            'vascular_zone': {
+                'tumor_immune_interface_pct': (25, 45),
+                'spatial_entropy': (0.4, 0.65),
+                'immune_markers': ['CD31', 'VWF', 'VEGFA', 'CD68'],
+                'description': 'Angiogenic regions, perivascular macrophages'
+            }
+        },
+        'pan_tissue': {
+            'immune_infiltrated': {
+                'tumor_immune_interface_pct': (40, 70),
+                'spatial_entropy': (0.6, 0.9),
+                'immune_markers': ['CD3D', 'CD8A', 'CD20', 'CD68'],
+                'description': 'High immune infiltration, mixed cell types'
+            },
+            'immune_excluded': {
+                'tumor_immune_interface_pct': (5, 20),
+                'spatial_entropy': (0.1, 0.3),
+                'immune_markers': ['FAP', 'COL1A1', 'TGFB1'],
+                'description': 'Stromal barrier, immune excluded'
+            },
+            'immune_desert': {
+                'tumor_immune_interface_pct': (0, 10),
+                'spatial_entropy': (0.05, 0.2),
+                'immune_markers': ['KRT8', 'KRT18', 'EPCAM'],
+                'description': 'Minimal immune presence, epithelial-dominated'
+            }
         }
     }
 
@@ -261,16 +341,24 @@ def load_medgemma_model(device="cpu", dtype=torch.float32):
     return model, tokenizer
 
 
-def generate_report_stage(model, tokenizer, prompt: str, max_tokens=512) -> str:
-    """Generate report for one stage."""
+def generate_report_stage(model, tokenizer, prompt: str, max_tokens=512, temperature=0.7) -> str:
+    """
+    Generate report for one stage.
+
+    Temperature guide:
+    - 0.3-0.5: Focused, less prompt echo, more deterministic
+    - 0.7: Balanced (default)
+    - 0.9+: Creative, more prompt echo risk
+    """
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_tokens,
-        temperature=0.7,
+        temperature=temperature,
         top_p=0.9,
-        do_sample=True
+        do_sample=True,
+        pad_token_id=tokenizer.eos_token_id  # Prevent padding warnings
     )
 
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
