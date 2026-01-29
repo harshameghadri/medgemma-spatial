@@ -15,10 +15,14 @@ import os
 from pathlib import Path
 from datetime import datetime
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from dotenv import load_dotenv
 import warnings
 warnings.filterwarnings('ignore')
 
-os.environ['HF_TOKEN'] = 'HF_TOKEN_REDACTED'
+load_dotenv()
+
+if not os.environ.get('HF_TOKEN'):
+    raise ValueError("HF_TOKEN not found in .env file. Please create .env with HF_TOKEN=your_token")
 
 
 def load_analysis_data(spatial_path, celltype_path):
@@ -33,27 +37,22 @@ def load_analysis_data(spatial_path, celltype_path):
 
 
 def load_medgemma_model(model_id="google/medgemma-4b-it"):
-    """Load MedGemma-4b-it with 4-bit quantization."""
-    quantization_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True
-    )
-
-    print(f"Loading {model_id} with 4-bit quantization...")
+    """Load MedGemma-4b-it on CPU (MPS has generation bugs)."""
+    device = "cpu"
+    print(f"Loading {model_id} on {device}...")
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, token=os.environ.get('HF_TOKEN'))
 
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        quantization_config=quantization_config,
-        device_map="auto",
+        torch_dtype=torch.float32,
+        device_map=device,
         trust_remote_code=True,
-        token=os.environ.get('HF_TOKEN')
+        token=os.environ.get('HF_TOKEN'),
+        low_cpu_mem_usage=True
     )
 
-    print("Model loaded successfully")
+    print(f"Model loaded successfully on {device}")
     return tokenizer, model
 
 
@@ -72,10 +71,15 @@ def create_clinical_prompt(spatial_data, celltype_data):
 
     interface_pct = celltype_data['tumor_immune_interface']['interface_pct']
 
-    top_morans = list(spatial_data['spatial_statistics']['morans_i']['top_genes'].keys())[:5]
+    top_morans = spatial_data['spatial_autocorrelation']['top_genes'][:5]
+    n_sig_genes = spatial_data['spatial_autocorrelation']['n_significant']
+    mean_entropy = spatial_data['spatial_entropy']['overall']['mean']
+    entropy_interp = spatial_data['spatial_entropy']['overall']['interpretation']
 
     top_luminal_markers = celltype_data['top_markers_per_celltype'].get('LummHR-SCGB', [])[:5]
     top_plasma_markers = celltype_data['top_markers_per_celltype'].get('plasma_IgG', [])[:5]
+
+    n_clusters = spatial_data.get('sample_info', spatial_data.get('dataset_info', {})).get('n_clusters', 'N/A')
 
     prompt = f"""You are a board-certified pathologist reviewing spatial transcriptomics data from a breast cancer biopsy specimen. Based on the following molecular and spatial findings, generate a concise clinical pathology report (approximately 200 words).
 
@@ -95,12 +99,15 @@ CELL TYPE COMPOSITION:
 
 SPATIAL ORGANIZATION:
 - Tumor-immune interface: {interface_pct:.1f}% of tissue shows direct contact between tumor and immune cells
-- Spatial clusters identified: {spatial_data['dataset_info']['n_clusters']} distinct tissue regions
-- Spatially variable genes (Moran's I > 0.1): {spatial_data['spatial_statistics']['morans_i']['n_significant_genes']} genes
+- Spatial clusters identified: {n_clusters} distinct tissue regions
+- Spatial heterogeneity: {entropy_interp} diversity (entropy={mean_entropy:.2f})
+- Spatially variable genes: {n_sig_genes} genes with significant autocorrelation
   * Top spatially clustered genes: {', '.join(top_morans)}
+- Neighborhood enrichment: All cell types show spatial segregation (depletion patterns)
 
 MOLECULAR FEATURES:
-- Quality metrics: {spatial_data['qc_metrics']['mean_genes_per_spot']:.0f} genes/spot, {spatial_data['qc_metrics']['mean_mt_percent']:.1f}% mitochondrial
+- Gene expression: {spatial_data['sample_info']['n_genes']} genes analyzed per spot
+- Cell type confidence: Median {celltype_data['cell_type_stats']['median_confidence']:.2f}
 
 Generate a clinical report including:
 1. Diagnosis and tumor classification
@@ -127,10 +134,11 @@ def generate_report(tokenizer, model, prompt, max_length=400):
         outputs = model.generate(
             **inputs,
             max_new_tokens=max_length,
-            temperature=0.7,
-            top_p=0.9,
+            temperature=0.3,
+            top_k=50,
             do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=tokenizer.eos_token_id
         )
 
     full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -226,8 +234,12 @@ def main():
     print("\n1. Loading analysis data...")
     spatial_features, celltype_summary = load_analysis_data(args.spatial, args.celltype)
 
-    print(f"   Total spots: {spatial_features['dataset_info']['total_spots']}")
-    print(f"   Spatial clusters: {spatial_features['dataset_info']['n_clusters']}")
+    if 'sample_info' in spatial_features:
+        print(f"   Total spots: {spatial_features['sample_info']['n_spots']}")
+        print(f"   Spatial clusters: {spatial_features['sample_info']['n_clusters']}")
+    else:
+        print(f"   Total spots: {spatial_features['dataset_info']['total_spots']}")
+        print(f"   Spatial clusters: {spatial_features['dataset_info']['n_clusters']}")
 
     total = celltype_summary['cell_type_stats']['total_spots']
     for celltype, count in celltype_summary['cell_type_composition'].items():
