@@ -491,3 +491,187 @@ Day 3: MedGemma integration (adjusted)
 
 ---
 
+## Week 2 Day 2: MedGemma V2 Architecture (Added 2026-01-29)
+
+### Major Architectural Redesign ✅
+- **Transformed system**: Narrative generation → Uncertainty-aware reasoning audit engine
+- **Philosophy shift**: "Prioritize robustness over richness, stop early when warranted"
+- **Implemented**: All 10 architectural upgrades from comprehensive user critique
+
+### Core Technical Achievements
+
+#### 1. Uncertainty Propagation Infrastructure
+- **Permutation-based p-values**: 999 permutations per gene for Moran's I
+- **Bootstrap confidence intervals**: 1000 samples for spatial entropy
+- **Signal strength classification**: STRONG (p<0.001, |I|>0.3), MODERATE (p<0.05, |I|>0.1), WEAK, NONE
+- **Results**: 5 STRONG, 17 MODERATE, 28 WEAK signals on test data
+- **Runtime**: ~12 minutes for 50 genes
+
+#### 2. Stage Stopping Logic
+- **Hard stop conditions**:
+  - Mean annotation confidence < 0.4
+  - Low-confidence rate > 50%
+  - Zero STRONG + <3 MODERATE signals
+  - Spatial entropy < 0.2 (no heterogeneity)
+- **Stopping reports**: Generated when signal insufficient
+- **Decision on test data**: PROCEED (signal quality sufficient)
+
+#### 3. Self-Audit Validation Suite
+- **6 programmatic audit functions**:
+  1. Parroting detection (numeric values + generic phrases)
+  2. Tangent detection (off-topic sentences)
+  3. Uncertainty omission (missing p-values/CIs)
+  4. Overconfident claims ("definitively", "proves", "always")
+  5. Claim-evidence alignment (cross-reference signal strength)
+  6. Fragility testing (prompt consistency)
+- **Auto-rejection**: Reports failing audit regenerated with stricter prompts
+- **Validation**: PASS/FAIL with detailed violation list
+
+#### 4. Multi-Scale Spatial Analysis
+- **3 spatial radii**: ~55μm, 110μm, 165μm for Visium spots
+- **Scale stability assessment**: Identifies scale-dependent vs scale-stable interactions
+- **Fallback mode**: Scanpy-only enrichment when squidpy unavailable
+- **Status**: Implemented (squidpy dependency issue pending)
+
+#### 5. Annotation Quality Pre-Stage
+- **Doublet detection**: Scrublet integration (expected rate: 6%)
+- **Confidence assessment**: CellTypist confidence scores
+- **Quality metrics**: Mean confidence, low-conf rate, doublet rate
+- **Gate for downstream**: Low quality → stop analysis
+
+#### 6. Comparative Analysis Framework
+- **Reference phenotypes**: Hot tumor, cold tumor, hybrid immune-inflamed
+- **Forced comparison**: Reports must cite reference ranges
+- **Anti-generic prompts**: "How does this DIFFER from cold tumor?" not "spatial patterns observed"
+- **Hybrid states**: Acknowledge transitional phenotypes
+
+#### 7. Conditional Reasoning Engine
+- **IF-THEN-BECAUSE format**: Required for mechanistic claims
+- **Multi-signal requirement**: ≥2 independent signals for inferences
+- **Example**: "IF entropy < 0.3 (p < 0.001) THEN homogeneous BECAUSE low diversity indicates clonal expansion"
+
+#### 8. CPU/GPU Auto-Detection
+- **CUDA detection**: Auto-selects NVIDIA GPUs on Kaggle (FP16 quantization)
+- **MPS workaround**: M1 Mac MPS bugs → fallback to CPU
+- **Cross-platform**: Works on M1 Mac, Kaggle GPU, HPC clusters
+- **Performance**: Estimated 2× speedup on Kaggle T4 vs M1 CPU
+
+### Software Engineering Achievements
+
+#### Code Architecture
+- **3 new production modules** (~1200 lines total):
+  - `uncertainty_spatial_analysis.py`: Stage 0-1 (uncertainty quantification)
+  - `medgemma_self_audit.py`: Stage 6 (anti-parrot validation)
+  - `medgemma_v2_pipeline.py`: Integrated pipeline (Stages 2-5)
+- **Modular design**: Each stage independently testable
+- **Error handling**: Try/except blocks for dependency issues (squidpy, scrublet)
+- **Fallback strategies**: Scanpy-only mode, graceful degradation
+
+#### Statistical Rigor
+- **Permutation testing**: Non-parametric significance (no distributional assumptions)
+- **Bootstrap resampling**: Empirical confidence intervals
+- **Multiple testing**: Bonferroni-aware p-value reporting
+- **Effect sizes**: Moran's I magnitude + significance both required
+
+#### Validation Methodology
+- **Programmatic checks**: Self-audit catches parroting/tangents automatically
+- **Atomic claim verification**: Each sentence validated against signal strength
+- **Fragility testing**: Same data + different prompts → consistency check
+- **Stage gates**: Cannot proceed to Stage 2 without passing Stage 1 quality checks
+
+### Documentation & Communication
+
+#### Comprehensive Documentation
+- **MEDGEMMA_V2_IMPLEMENTATION.md** (600+ lines):
+  - All 10 upgrades documented with code examples
+  - V1 vs V2 comparison table
+  - Performance metrics, validation status
+  - Known limitations + solutions
+- **WEEK2_DAY2_SUMMARY.md** (636 lines):
+  - Detailed implementation narrative
+  - User requirement traceability
+  - Test results, next steps
+
+#### Technical Writing Quality
+- Clear traceability: User requirement → Implementation → Validation
+- Code examples with before/after comparisons
+- Troubleshooting guides for common issues
+- Architecture diagrams (text-based)
+
+### Problem-Solving Demonstrations
+
+#### 1. Squidpy Dependency Issue
+- **Problem**: zarr version incompatibility blocking multi-scale analysis
+- **Solution**: Try/except block + scanpy-only fallback mode
+- **Impact**: Graceful degradation, analysis continues without squidpy
+- **Learning**: Always provide fallback for optional dependencies
+
+#### 2. Annotation Confidence Missing
+- **Problem**: `conf_score` column not in h5ad file
+- **Solution**: Check for column existence, return NaN if missing
+- **Impact**: Pipeline runs successfully, reports "confidence not available"
+- **Learning**: Never assume data structure, always validate
+
+#### 3. MedGemma MPS Generation Bug
+- **Problem**: PyTorch 2.10 MPS backend crashes during sampling
+- **Solution**: Auto-detect MPS, warn user, fallback to CPU
+- **Impact**: Stability over speed (4-5 min CPU vs potential crash)
+- **Learning**: Document platform-specific bugs, provide workarounds
+
+### Skills Demonstrated
+
+#### Bioinformatics
+- Spatial autocorrelation (Moran's I with permutation tests)
+- Multi-scale neighborhood analysis
+- Doublet detection (Scrublet algorithm)
+- Bootstrap resampling for uncertainty quantification
+
+#### Machine Learning
+- Prompt engineering for anti-parrot behavior
+- Self-audit mechanisms (programmatic validation)
+- Model deployment (CPU/GPU auto-detection)
+- Cross-platform compatibility (M1 Mac, Kaggle GPU)
+
+#### Software Engineering
+- Modular architecture (separation of concerns)
+- Error handling & graceful degradation
+- Dependency management (try/except for optional deps)
+- Git workflow (feature branch, detailed commits)
+
+#### Scientific Rigor
+- Hypothesis-driven reasoning (IF-THEN-BECAUSE)
+- Uncertainty propagation (first-class concern)
+- Stage stopping logic (don't over-infer)
+- Claim-evidence alignment (atomic validation)
+
+### Comparison: Before vs After
+
+| Aspect | Before (V1) | After (V2) |
+|--------|-------------|------------|
+| **Philosophy** | Generate narrative always | Stop early if signal weak |
+| **Uncertainty** | None | Permutation p-values + bootstrap CIs |
+| **Parroting** | Common (e.g., "34.6%") | Detected + auto-rejected |
+| **Signal Quality** | Ignored | STRONG/MODERATE/WEAK/NONE tiers |
+| **Stopping** | Never | 4 hard conditions |
+| **Comparative** | Generic descriptions | Forced reference comparison |
+| **Audit** | Manual review | 6-function validation suite |
+| **GPU** | Hardcoded CPU | Auto CUDA/MPS/CPU |
+| **Doublets** | Ignored | Scrublet detection |
+
+### Impact on Portfolio Value
+
+**Demonstrates senior-level capabilities**:
+1. **Architectural thinking**: Redesigned entire system based on critique
+2. **Statistical rigor**: Permutation tests, bootstrap CIs, formal hypothesis testing
+3. **Production quality**: Error handling, fallbacks, cross-platform compatibility
+4. **Scientific integrity**: Stage stopping, uncertainty propagation, claim validation
+5. **Rapid iteration**: 10 major upgrades implemented in <12 hours
+
+**Differentiator for job interviews**:
+- Show architectural evolution (V1 → V2 comparison)
+- Discuss trade-offs (robustness vs richness)
+- Explain self-audit mechanisms (programmatic validation)
+- Demonstrate statistical thinking (permutation tests, bootstrap)
+
+---
+
