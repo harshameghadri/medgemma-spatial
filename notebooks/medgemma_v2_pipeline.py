@@ -276,8 +276,23 @@ def generate_report_stage(model, tokenizer, prompt: str, max_tokens=512) -> str:
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     # Extract only the generated portion (after prompt)
+    # Try multiple strategies to remove prompt
     if prompt in response:
         response = response.replace(prompt, "").strip()
+    else:
+        # If exact match fails, try to find where the actual response starts
+        # Look for markdown code blocks or key phrases that indicate response start
+        response_markers = [
+            "```\n",
+            "IF spatial entropy",
+            "This sample",
+            "Confidence level:"
+        ]
+        for marker in response_markers:
+            if marker in response:
+                idx = response.find(marker)
+                response = response[idx:].strip()
+                break
 
     return response
 

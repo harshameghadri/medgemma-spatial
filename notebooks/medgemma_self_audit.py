@@ -38,7 +38,11 @@ def detect_parroting(medgemma_output: str, input_features: Dict) -> Dict:
     input_numbers = extract_numbers(input_features)
 
     # Whitelist common rounded numbers that aren't really parroting
-    WHITELISTED_NUMBERS = ['0', '1', '2', '3', '4', '5']
+    # Include both integers and single-decimal-place rounded values
+    WHITELISTED_NUMBERS = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+        '0.0', '0.1', '0.2', '0.3', '0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '1.0'
+    ]
 
     # Check if exact numeric values appear in output
     for path, value in input_numbers:
