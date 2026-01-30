@@ -41,6 +41,12 @@ def detect_doublets_scrublet(adata, expected_doublet_rate=0.06):
     doublet_scores, predicted_doublets = scrub.scrub_doublets(min_counts=2, min_cells=3, min_gene_variability_pctl=85)
 
     adata.obs['doublet_score'] = doublet_scores
+
+    # Handle case where Scrublet couldn't automatically identify threshold
+    if predicted_doublets is None:
+        print(f"  Warning: Scrublet couldn't auto-identify threshold, using score > 0.25")
+        predicted_doublets = doublet_scores > 0.25
+
     adata.obs['predicted_doublet'] = predicted_doublets
 
     n_doublets = predicted_doublets.sum()

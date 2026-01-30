@@ -142,6 +142,40 @@ def extract_binned_h5ad(binned_tar_path: str, output_dir: Path, bin_size: str = 
         print(f"  Converting {h5_path.name} to h5ad...")
         adata = sc.read_10x_h5(h5_path)
 
+        # Extract spatial coordinates
+        spatial_members = [
+            m for m in tar.getmembers()
+            if f"square_{bin_size}" in m.name
+            and 'tissue_positions.parquet' in m.name
+        ]
+
+        if spatial_members:
+            import pandas as pd
+            spatial_member = spatial_members[0]
+            tar.extract(spatial_member, path=output_dir)
+            spatial_path = output_dir / spatial_member.name
+
+            print(f"  Loading spatial coordinates from {spatial_path.name}...")
+            spatial_df = pd.read_parquet(spatial_path)
+
+            # Add spatial coordinates to adata.obsm['spatial']
+            # Match barcodes in adata to spatial_df
+            if 'barcode' in spatial_df.columns:
+                spatial_df = spatial_df.set_index('barcode')
+
+            # Get x, y coordinates (column names vary by 10x version)
+            coord_cols = [c for c in spatial_df.columns if 'pxl' in c.lower() or 'imagerow' in c.lower() or 'imagecol' in c.lower()]
+
+            if len(coord_cols) >= 2:
+                # Use first two coordinate columns
+                coords = spatial_df.loc[adata.obs_names, coord_cols[:2]].values
+                adata.obsm['spatial'] = coords
+                print(f"  Added spatial coordinates: {coords.shape}")
+            else:
+                print(f"  Warning: Could not find coordinate columns in {list(spatial_df.columns)}")
+        else:
+            print(f"  Warning: No tissue_positions.parquet found for {bin_size}")
+
         h5ad_path = output_dir / f"square_{bin_size}.h5ad"
         adata.write_h5ad(h5ad_path)
         print(f"  Saved: {h5ad_path}")
