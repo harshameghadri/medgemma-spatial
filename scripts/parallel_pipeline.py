@@ -63,39 +63,90 @@ def find_binned_outputs(obfuscated_dir: Path, mapping: Dict) -> List[Tuple[str, 
     return sorted(samples)
 
 
-def extract_binned_h5ad(binned_tar_path: str, output_dir: Path, bin_size: str = "008um") -> str:
+def detect_available_bins(binned_tar_path: str) -> list:
+    """Detect all available bin sizes in archive."""
+    import tarfile
+    import re
+
+    with tarfile.open(binned_tar_path, 'r:gz') as tar:
+        members = tar.getnames()
+
+        # Find all square_XXXum patterns
+        bin_pattern = re.compile(r'square_(\d{3}um)')
+        bins = set()
+        for m in members:
+            match = bin_pattern.search(m)
+            if match:
+                bins.add(match.group(1))
+
+        # Sort by numeric value (064um > 032um > 016um > 008um)
+        return sorted(bins, key=lambda x: int(x[:3]), reverse=True)
+
+
+def extract_binned_h5ad(binned_tar_path: str, output_dir: Path, bin_size: str = None) -> str:
     """
-    Extract specific bin resolution from binned_outputs.tar.gz.
+    Extract and convert h5 to h5ad from binned_outputs.tar.gz.
 
     Args:
         binned_tar_path: Path to binned_outputs.tar.gz
         output_dir: Where to extract
-        bin_size: Resolution to extract (008um, 016um, 032um, etc.)
+        bin_size: Resolution (008um, 016um, etc.) - auto-detects if None
 
     Returns:
-        Path to extracted h5ad file
+        Path to h5ad file
     """
     import tarfile
+    import scanpy as sc
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Auto-detect if not specified
+    if bin_size is None:
+        available = detect_available_bins(binned_tar_path)
+        if not available:
+            raise FileNotFoundError("No square_XXXum bins found in archive")
+        bin_size = available[0]  # Highest bin = lowest memory
+        print(f"  Auto-detected bin sizes: {available}")
+        print(f"  Using: {bin_size} (highest = least spots = lowest memory)")
+
     with tarfile.open(binned_tar_path, 'r:gz') as tar:
-        # Find the specific bin size
-        matching_members = [
+        # Try .h5ad first (newer format)
+        h5ad_members = [
             m for m in tar.getmembers()
             if f"square_{bin_size}" in m.name and m.name.endswith('.h5ad')
         ]
 
-        if not matching_members:
-            raise FileNotFoundError(f"No h5ad found for bin size {bin_size}")
+        if h5ad_members:
+            member = h5ad_members[0]
+            tar.extract(member, path=output_dir)
+            return str(output_dir / member.name)
 
-        # Extract first matching file
-        member = matching_members[0]
+        # Fall back to .h5 (older 10x format)
+        h5_members = [
+            m for m in tar.getmembers()
+            if f"square_{bin_size}" in m.name
+            and 'filtered_feature_bc_matrix.h5' in m.name
+        ]
+
+        if not h5_members:
+            raise FileNotFoundError(
+                f"No .h5ad or .h5 found for bin {bin_size}. "
+                f"Available bins: {detect_available_bins(binned_tar_path)}"
+            )
+
+        # Extract and convert .h5 → .h5ad
+        member = h5_members[0]
         tar.extract(member, path=output_dir)
+        h5_path = output_dir / member.name
 
-        extracted_path = output_dir / member.name
+        print(f"  Converting {h5_path.name} to h5ad...")
+        adata = sc.read_10x_h5(h5_path)
 
-        return str(extracted_path)
+        h5ad_path = output_dir / f"square_{bin_size}.h5ad"
+        adata.write_h5ad(h5ad_path)
+        print(f"  Saved: {h5ad_path}")
+
+        return str(h5ad_path)
 
 
 def process_single_sample(
@@ -362,9 +413,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--bin-size",
-        default="008um",
-        choices=["008um", "016um", "032um", "064um"],
-        help="Visium HD bin resolution"
+        default=None,
+        type=str,
+        help="Visium HD bin resolution (auto-detects highest if not specified)"
     )
 
     parser.add_argument(
