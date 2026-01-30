@@ -401,6 +401,15 @@ def run_uncertainty_aware_spatial_analysis(adata_path, output_path):
     adata = sc.read_h5ad(adata_path)
     print(f"  Loaded: {adata.n_obs} spots, {adata.n_vars} genes")
 
+    # Subsample if dataset is too large (for stability and Kaggle compatibility)
+    MAX_SPOTS = 50000
+    if adata.n_obs > MAX_SPOTS:
+        print(f"\n  ⚠️  Dataset has {adata.n_obs:,} spots (>{MAX_SPOTS:,})")
+        print(f"  Subsampling to {MAX_SPOTS:,} spots for memory efficiency and stability")
+        print(f"  (Kaggle limit: 20GB RAM, large datasets cause segfaults)")
+        sc.pp.subsample(adata, n_obs=MAX_SPOTS, random_state=42)
+        print(f"  ✓ Subsampled: {adata.n_obs:,} spots retained")
+
     # Stage 0: Annotation quality
     print("\n[2/6] STAGE 0: Annotation Quality Assessment")
     adata, doublet_metrics = detect_doublets_scrublet(adata)
@@ -416,16 +425,19 @@ def run_uncertainty_aware_spatial_analysis(adata_path, output_path):
         sc.pp.neighbors(adata, use_rep='spatial')
 
     # Stage 1: Moran's I with uncertainty
+    # NOTE: Using reduced permutations (99) for faster testing
+    # For production: increase to 999 for more accurate p-values
     print("\n[4/6] STAGE 1: Spatial Autocorrelation (Moran's I)")
-    morans_results = compute_morans_i_with_uncertainty(adata, n_genes=50, n_permutations=999)
+    morans_results = compute_morans_i_with_uncertainty(adata, n_genes=50, n_permutations=99)
 
     # Spatial entropy with uncertainty
+    # NOTE: Using reduced bootstrap (100) for faster testing
     print("\n[5/6] Spatial Entropy (with bootstrap CI)")
-    entropy_results = compute_spatial_entropy_with_bootstrapping(adata, n_bootstrap=1000)
+    entropy_results = compute_spatial_entropy_with_bootstrapping(adata, n_bootstrap=100)
 
     # Multi-scale analysis
     print("\n[6/6] Multi-Scale Neighborhood Enrichment")
-    multiscale_results = compute_multiscale_neighborhood_enrichment(adata, radii=[1, 2, 3], n_permutations=999)
+    multiscale_results = compute_multiscale_neighborhood_enrichment(adata, radii=[1, 2, 3], n_permutations=99)
 
     # Stage stopping decision
     print("\n" + "=" * 80)
