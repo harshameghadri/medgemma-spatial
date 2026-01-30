@@ -197,13 +197,11 @@ def process_single_sample(
         print(f"[{sample_id}] Running uncertainty spatial analysis...")
         features_output = sample_dir / "uncertainty_features.json"
 
-        from uncertainty_spatial_analysis import run_uncertainty_pipeline
+        from uncertainty_spatial_analysis import run_uncertainty_aware_spatial_analysis
 
-        uncertainty_results = run_uncertainty_pipeline(
-            h5ad_path=h5ad_path,
-            output_path=str(features_output),
-            n_neighbors=30,
-            n_top_genes=100
+        uncertainty_results = run_uncertainty_aware_spatial_analysis(
+            adata_path=h5ad_path,
+            output_path=str(features_output)
         )
 
         results['features_path'] = str(features_output)
