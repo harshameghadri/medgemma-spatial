@@ -1,7 +1,0 @@
-{
-  "sample_id": "e2735493904baddea063a55d5e676d24",
-  "tissue": "colon",
-  "status": "FAILED",
-  "timestamp": "2026-01-30T09:49:17.746121",
-  "error": "No h5ad found for bin size 016um"
-}

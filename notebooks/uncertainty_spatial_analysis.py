@@ -65,6 +65,136 @@ def detect_doublets_scrublet(adata, expected_doublet_rate=0.06):
     return adata, quality_metrics
 
 
+def annotate_spatial_regions(adata, resolution=0.5, use_markers=True,
+                            marker_file="data/PanglaoDB_markers_27_Mar_2020.tsv",
+                            tissue="Colon"):
+    """
+    Annotate spatial regions using Leiden clustering + marker genes.
+
+    Workflow:
+    1. Normalize and log transform
+    2. Find highly variable genes
+    3. PCA
+    4. Leiden clustering
+    5. Marker gene-based cell type annotation
+
+    Args:
+        adata: AnnData object with raw counts
+        resolution: Leiden clustering resolution
+        use_markers: Use PanglaoDB markers for annotation
+        marker_file: Path to marker database
+        tissue: Tissue type for marker filtering
+
+    Returns:
+        adata: Updated with cell_type labels and metrics
+        annotation_metrics: Dict with statistics
+    """
+    print(f"Annotating spatial regions (resolution={resolution}, markers={use_markers})...")
+
+    try:
+        # Store raw counts if not already stored
+        if 'counts' not in adata.layers:
+            adata.layers['counts'] = adata.X.copy()
+
+        # 1. Normalize and log transform
+        print("  [1/5] Normalizing to 10,000 counts per spot...")
+        sc.pp.normalize_total(adata, target_sum=1e4)
+        sc.pp.log1p(adata)
+
+        # 2. Find highly variable genes
+        print("  [2/5] Finding highly variable genes...")
+        sc.pp.highly_variable_genes(adata, n_top_genes=2000, flavor='seurat')
+
+        # 3. PCA
+        print("  [3/5] Computing PCA...")
+        sc.pp.pca(adata, use_highly_variable=True, n_comps=50)
+
+        # 4. Neighbor graph
+        print("  [4/5] Building neighbor graph...")
+        sc.pp.neighbors(adata, n_neighbors=15, use_rep='X_pca')
+
+        # 5. Leiden clustering
+        print("  [5/5] Leiden clustering...")
+        sc.tl.leiden(adata, resolution=resolution, key_added='spatial_region')
+
+        n_regions = adata.obs['spatial_region'].nunique()
+        region_counts = adata.obs['spatial_region'].value_counts()
+        print(f"  ✓ Identified {n_regions} spatial regions")
+
+        # 6. Marker-based annotation (optional)
+        if use_markers:
+            try:
+                import os
+                if os.path.exists(marker_file):
+                    from marker_annotation import annotate_clusters_with_markers
+
+                    print(f"\n  [6/6] Marker-based cell type annotation...")
+                    adata, annot_df, score_mat, marker_metrics = annotate_clusters_with_markers(
+                        adata,
+                        marker_file=marker_file,
+                        tissue=tissue,
+                        cluster_key='spatial_region'
+                    )
+
+                    # Use predicted cell types as primary labels
+                    adata.obs['cell_type'] = adata.obs['cell_type_predicted']
+                    adata.obs['conf_score'] = 0.9
+
+                    annotation_metrics = {
+                        'annotation_method': 'leiden_clustering + markers',
+                        'n_regions': int(n_regions),
+                        'resolution': float(resolution),
+                        'region_sizes_min': int(region_counts.min()),
+                        'region_sizes_max': int(region_counts.max()),
+                        'region_sizes_mean': float(region_counts.mean()),
+                        **marker_metrics
+                    }
+                else:
+                    print(f"  ⚠ Marker file not found: {marker_file}")
+                    print(f"  Falling back to generic region labels")
+                    adata.obs['cell_type'] = 'Region_' + adata.obs['spatial_region'].astype(str)
+                    adata.obs['conf_score'] = 0.7
+
+                    annotation_metrics = {
+                        'annotation_method': 'leiden_clustering',
+                        'n_regions': int(n_regions),
+                        'resolution': float(resolution)
+                    }
+            except Exception as marker_error:
+                print(f"  ⚠ Marker annotation failed: {marker_error}")
+                print(f"  Using generic region labels")
+                adata.obs['cell_type'] = 'Region_' + adata.obs['spatial_region'].astype(str)
+                adata.obs['conf_score'] = 0.7
+
+                annotation_metrics = {
+                    'annotation_method': 'leiden_clustering',
+                    'n_regions': int(n_regions),
+                    'marker_error': str(marker_error)
+                }
+        else:
+            # No markers, use generic labels
+            adata.obs['cell_type'] = 'Region_' + adata.obs['spatial_region'].astype(str)
+            adata.obs['conf_score'] = 0.7
+
+            annotation_metrics = {
+                'annotation_method': 'leiden_clustering',
+                'n_regions': int(n_regions),
+                'resolution': float(resolution)
+            }
+
+        return adata, annotation_metrics
+
+    except Exception as e:
+        print(f"  ERROR during spatial annotation: {e}")
+        adata.obs['cell_type'] = 'Region_0'
+        adata.obs['spatial_region'] = '0'
+        adata.obs['conf_score'] = 0.0
+        return adata, {
+            'annotation_method': 'fallback',
+            'error': str(e)
+        }
+
+
 def assess_annotation_confidence(adata, confidence_key='conf_score'):
     """
     Assess cell type annotation confidence and flag low-quality annotations.
@@ -413,6 +543,12 @@ def run_uncertainty_aware_spatial_analysis(adata_path, output_path):
     # Stage 0: Annotation quality
     print("\n[2/6] STAGE 0: Annotation Quality Assessment")
     adata, doublet_metrics = detect_doublets_scrublet(adata)
+
+    # Spatial region annotation (clustering-based)
+    print("\n[2.5/6] Spatial Region Annotation (Leiden)")
+    adata, annotation_metrics = annotate_spatial_regions(adata, resolution=0.5)
+
+    # Assess annotation confidence
     annotation_quality = assess_annotation_confidence(adata)
 
     # Build spatial graph (needed for all subsequent stages)
