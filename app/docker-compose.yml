@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  medgemma-spatial:
+    build:
+      context: ..
+      dockerfile: app/Dockerfile
+    image: medgemma-spatial:latest
+    container_name: medgemma-spatial
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount data directory for persistent storage
+      - ../data:/app/data:ro
+      # Mount output directory for results
+      - ../outputs:/output:rw
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
