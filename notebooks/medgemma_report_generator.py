@@ -51,7 +51,7 @@ def create_anti_parroting_prompt(features: Dict) -> str:
     has_high_uncertainty = features.get('uncertainty', {}).get('mean_prediction_entropy', 0) > 1.5
 
     # Build interpretive prompt (NO RAW DATA)
-    prompt = f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human colon cancer tissue.
+    prompt = f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
 
 TASK: Generate a concise clinical pathology report (150-200 words) that synthesizes the biological findings.
 
@@ -150,7 +150,7 @@ def create_structured_template_prompt(features: Dict) -> str:
     immune_status = "high" if immune_fraction > 0.15 else "moderate" if immune_fraction > 0.08 else "low"
     stromal_status = "prominent" if stromal_fraction > 0.20 else "minimal"
 
-    prompt = f"""Generate a clinical pathology report for Visium HD spatial transcriptomics analysis of colon cancer tissue.
+    prompt = f"""Generate a clinical pathology report for Visium HD spatial transcriptomics analysis of human tissue.
 
 TISSUE CHARACTERISTICS (interpret these patterns):
 - Epithelial architecture: {epithelial_status}
