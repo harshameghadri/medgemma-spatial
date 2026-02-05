@@ -81,7 +81,7 @@ def create_clinical_prompt(spatial_data, celltype_data):
 
     n_clusters = spatial_data.get('sample_info', spatial_data.get('dataset_info', {})).get('n_clusters', 'N/A')
 
-    prompt = f"""You are a board-certified pathologist reviewing spatial transcriptomics data from a breast cancer biopsy specimen. Based on the following molecular and spatial findings, generate a concise clinical pathology report (approximately 200 words).
+    prompt = f"""You are a board-certified pathologist reviewing spatial transcriptomics data from a human tissue specimen. Based on the following molecular and spatial findings, generate a concise clinical pathology report (approximately 200 words).
 
 SPECIMEN DATA:
 - Total analyzed tissue spots: {total_spots}
@@ -162,7 +162,7 @@ def save_report(report, spatial_data, celltype_data, output_dir):
         f.write("=" * 80 + "\n\n")
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Analysis Method: 10x Genomics Visium + MedGemma-4b-it\n")
-        f.write(f"Specimen Type: Breast Cancer Biopsy\n\n")
+        f.write(f"Specimen Type: Human Tissue\n\n")
         f.write("REPORT:\n")
         f.write("-" * 80 + "\n")
         f.write(report)

@@ -206,9 +206,11 @@ def process_single_sample(
     sample_dir = output_base / sample_id
     sample_dir.mkdir(parents=True, exist_ok=True)
 
+    import hashlib
+    sample_hash = hashlib.md5(sample_id.encode()).hexdigest()[:8]
+
     results = {
-        'sample_id': sample_id,
-        'tissue': tissue_type,
+        'sample_hash': sample_hash,
         'status': 'STARTED',
         'timestamp': datetime.now().isoformat()
     }

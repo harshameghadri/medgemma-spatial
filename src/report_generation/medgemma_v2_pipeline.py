@@ -492,7 +492,6 @@ def run_medgemma_v2_pipeline(
         'audit_results': audit_results,
         'metadata': {
             'medgemma_version': 'v2_uncertainty_aware',
-            'tissue_type': tissue_type,
             'stage_stopping_decision': decision,
             'device': device,
             'dtype': str(dtype)
