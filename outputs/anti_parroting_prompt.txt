@@ -1,0 +1,25 @@
+You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
+
+TASK: Generate a concise clinical pathology report (150-200 words) that synthesizes the biological findings.
+
+AVAILABLE INFORMATION:
+- Tissue composition shows 0 major cell populations
+- Immune infiltration detected with 0 immune cell types present
+- Spatial organization: relatively uniform
+- Tissue complexity: defined regions
+
+REPORTING REQUIREMENTS:
+1. Describe the predominant tissue architecture and cellular composition
+2. Characterize the immune microenvironment and infiltration patterns
+3. Comment on spatial organization and tissue heterogeneity
+4. Provide brief clinical or biological interpretation
+5. Note any unexpected or significant findings
+
+CRITICAL:
+- DO NOT list cell type percentages or raw counts
+- DO NOT enumerate spatial metrics or statistics
+- SYNTHESIZE biological meaning, don't summarize data
+- Use domain knowledge to interpret patterns
+- Focus on clinical/biological significance
+
+Generate the report now:

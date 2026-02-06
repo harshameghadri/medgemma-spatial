@@ -21,7 +21,7 @@ try:
     import pandas as pd
     import plotly.express as px
     import plotly.graph_objects as go
-    from src.spatial_analysis.uncertainty_spatial_analysis import (
+    from src.streamlit_adapter import (
         annotate_spatial_regions,
         calculate_spatial_heterogeneity
     )
