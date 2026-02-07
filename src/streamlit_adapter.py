@@ -9,6 +9,7 @@ from pathlib import Path
 import tempfile
 import json
 
+import numpy as np
 import scanpy as sc
 import squidpy as sq
 
@@ -29,29 +30,41 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
     Wrapper for V2 pipeline stages: QC, clustering, and annotation.
     Returns (adata, metrics_dict).
     """
-    # Stage 0: QC and preprocessing
-    sc.pp.filter_cells(adata, min_genes=200)
-    sc.pp.filter_genes(adata, min_cells=3)
+    # Make a copy to avoid modifying original
+    adata = adata.copy()
 
-    # Calculate QC metrics
-    adata.var['mt'] = adata.var_names.str.startswith('MT-')
-    sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
+    # Check if data is already preprocessed
+    is_preprocessed = (
+        'highly_variable' in adata.var.columns or
+        'X_pca' in adata.obsm or
+        adata.n_vars < 3000  # Likely already filtered
+    )
 
-    # Filter based on QC
-    adata = adata[adata.obs['pct_counts_mt'] < 20].copy()
+    if not is_preprocessed:
+        # Stage 0: QC and preprocessing
+        sc.pp.filter_cells(adata, min_genes=200)
+        sc.pp.filter_genes(adata, min_cells=3)
 
-    # Normalize and log-transform
-    sc.pp.normalize_total(adata, target_sum=1e4)
-    sc.pp.log1p(adata)
+        # Calculate QC metrics
+        adata.var['mt'] = adata.var_names.str.startswith('MT-')
+        sc.pp.calculate_qc_metrics(adata, qc_vars=['mt'], percent_top=None, log1p=False, inplace=True)
 
-    # Feature selection
-    sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+        # Filter based on QC
+        adata = adata[adata.obs['pct_counts_mt'] < 20].copy()
 
-    # Scale data
-    sc.pp.scale(adata, max_value=10)
+        # Normalize and log-transform
+        sc.pp.normalize_total(adata, target_sum=1e4)
+        sc.pp.log1p(adata)
 
-    # PCA
-    sc.tl.pca(adata, svd_solver='arpack')
+        # Feature selection
+        sc.pp.highly_variable_genes(adata, n_top_genes=2000)
+
+        # Scale data
+        sc.pp.scale(adata, max_value=10)
+
+    # PCA (check if already computed)
+    if 'X_pca' not in adata.obsm:
+        sc.tl.pca(adata, svd_solver='arpack')
 
     # Compute neighborhood graph
     sc.pp.neighbors(adata, n_neighbors=10, n_pcs=40)
@@ -108,22 +121,22 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
 
                     cluster_annotations[cluster] = best_type
 
-                # Map clusters to cell types
-                adata.obs['cell_type'] = adata.obs['spatial_region'].map(cluster_annotations)
+                # Map clusters to cell types (as categorical)
+                adata.obs['cell_type'] = adata.obs['spatial_region'].map(cluster_annotations).astype('category')
 
             else:
                 # Fallback: use cluster names
-                adata.obs['cell_type'] = adata.obs['spatial_region'].astype(str)
+                adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
 
         except Exception as e:
             print(f"Marker annotation failed: {e}. Using cluster labels.")
-            adata.obs['cell_type'] = adata.obs['spatial_region'].astype(str)
+            adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
     else:
         # Just use cluster labels as cell types
-        adata.obs['cell_type'] = adata.obs['spatial_region'].astype(str)
+        adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
 
-    # Compute confidence scores
-    adata = assess_annotation_confidence(adata, confidence_key='leiden_confidence')
+    # Compute confidence scores (returns dict, not adata)
+    confidence_metrics = assess_annotation_confidence(adata, confidence_key='leiden_confidence')
 
     # Extract metrics
     metrics = {
@@ -131,7 +144,7 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
         'n_genes': int(adata.n_vars),
         'n_clusters': int(len(adata.obs['spatial_region'].unique())),
         'n_cell_types': int(len(adata.obs['cell_type'].unique())),
-        'mean_confidence': float(adata.obs.get('annotation_confidence', [0.8]).mean()),
+        'mean_confidence': confidence_metrics.get('mean_confidence', 0.8),
         'cluster_distribution': adata.obs['spatial_region'].value_counts().to_dict()
     }
 
@@ -158,11 +171,23 @@ def calculate_spatial_heterogeneity(adata):
     # Stage 1: Moran's I (spatial autocorrelation)
     try:
         morans_results = compute_morans_i_with_uncertainty(adata, n_genes=50, n_permutations=100)
-        metrics['morans_i'] = {
-            'mean': float(morans_results['mean_i']),
-            'significant_genes': int(morans_results['n_significant']),
-            'p_value_mean': float(morans_results['mean_pval'])
-        }
+
+        if morans_results is not None:
+            # Results is dict of lists - compute summary stats
+            morans_i_values = morans_results.get('morans_i', [])
+            p_values = morans_results.get('p_value', [])
+
+            # Count significant genes (p < 0.05)
+            n_significant = sum(1 for p in p_values if p < 0.05) if p_values else 0
+
+            metrics['morans_i'] = {
+                'mean': float(np.mean(morans_i_values)) if morans_i_values else 0.0,
+                'significant_genes': int(n_significant),
+                'p_value_mean': float(np.mean(p_values)) if p_values else 1.0
+            }
+        else:
+            metrics['morans_i'] = {'mean': 0.0, 'significant_genes': 0, 'p_value_mean': 1.0}
+
     except Exception as e:
         print(f"Moran's I failed: {e}")
         metrics['morans_i'] = {'mean': 0.0, 'significant_genes': 0, 'p_value_mean': 1.0}
