@@ -1,0 +1,12 @@
+[server]
+maxUploadSize = 1024
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#1f77b4"

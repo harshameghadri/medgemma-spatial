@@ -1,0 +1,15 @@
+{
+  "abstract": {
+    "understands_spatial": true,
+    "interprets": true,
+    "mentions_morphology": true,
+    "report_length": 1839
+  },
+  "baseline": {
+    "parrots_counts": true,
+    "lists_cell_types": false,
+    "report_length": 1510
+  },
+  "verdict": "NOT NOVEL",
+  "novel_task": false
+}

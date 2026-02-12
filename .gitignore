@@ -167,3 +167,24 @@ dmypy.json
 # Profiling
 *.prof
 *.lprof
+
+# Internal development guides (private)
+.guides/
+
+# Research and documentation (private)
+info/
+
+# Tests output
+tests/*.txt
+tests/*.log
+
+# Outputs (keep structure but not files)
+outputs/*.h5ad
+outputs/*.png
+outputs/archive/
+outputs/successful/*.json
+outputs/failed/*.json
+
+# Temporary
+*.tmp
+.DS_Store

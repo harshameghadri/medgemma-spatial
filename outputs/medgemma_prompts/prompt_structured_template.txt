@@ -1,0 +1,25 @@
+Generate a clinical pathology report for Visium HD spatial transcriptomics analysis of colon cancer tissue.
+
+TISSUE CHARACTERISTICS (interpret these patterns):
+- Epithelial architecture: intact
+- Immune infiltration: high
+- Stromal component: prominent
+
+REPORT TEMPLATE (fill in with biological interpretation):
+
+HISTOLOGICAL COMPOSITION:
+[Describe the overall tissue architecture based on epithelial status. What does this suggest about tumor structure?]
+
+IMMUNE MICROENVIRONMENT:
+[Characterize the immune infiltration level. What types of immune responses are present? Implications for anti-tumor immunity?]
+
+STROMAL FEATURES:
+[Describe the stromal compartment. Is there desmoplasia or vascular remodeling?]
+
+SPATIAL ORGANIZATION:
+[Comment on tissue heterogeneity and cellular organization patterns]
+
+CLINICAL SIGNIFICANCE:
+[Provide brief interpretation of key findings relevant to diagnosis or prognosis]
+
+Generate the report (150-200 words, continuous narrative format, no bullets):

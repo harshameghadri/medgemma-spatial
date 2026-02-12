@@ -1,0 +1,9 @@
+{
+  "understands_spatial": true,
+  "understands_correlation": true,
+  "mentions_cell_types": true,
+  "mentions_metrics": false,
+  "level": "ADVANCED",
+  "novel_task": false,
+  "report_length": 1510
+}
