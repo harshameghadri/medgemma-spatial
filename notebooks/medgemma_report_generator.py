@@ -33,8 +33,13 @@ def create_anti_parroting_prompt(features: Dict) -> str:
 
     # Extract key information (but don't expose raw numbers in prompt)
     annotation = features.get('annotation', {})
-    cell_types = annotation.get('cell_type_counts', {})
-    n_spots = sum(cell_types.values())
+    # Support both key names from different pipeline versions
+    cell_types = (
+        annotation.get('cell_type_counts') or
+        annotation.get('cluster_distribution') or
+        {}
+    )
+    n_spots = sum(cell_types.values()) if cell_types else annotation.get('n_spots', 1)
 
     # Identify major cell populations (>10% of spots)
     major_populations = {k: v for k, v in cell_types.items()

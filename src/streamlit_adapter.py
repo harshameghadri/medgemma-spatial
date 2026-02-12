@@ -72,67 +72,101 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
     # Leiden clustering
     sc.tl.leiden(adata, resolution=resolution, key_added='spatial_region')
 
-    # Marker-based annotation (if requested)
+    # Cell type annotation: celltypist → PanglaoDB fallback → cluster labels
     if use_markers:
+        annotated = False
+
+        # --- Primary: CellTypist (proper probabilistic annotation) ---
         try:
-            # Load PanglaoDB markers
-            markers_path = Path(__file__).parent.parent / 'data' / 'PanglaoDB_markers_27_Mar_2020.tsv'
+            import celltypist
+            from celltypist import models
 
-            if markers_path.exists():
+            print("Running CellTypist annotation...")
+            # Use Immune_All_Low for broad coverage; download if needed
+            model = models.Model.load(model='Immune_All_Low.pkl')
+
+            # CellTypist needs log1p-normalised counts (target_sum=1e4)
+            # Make a raw-counts copy for celltypist if data already scaled
+            adata_ct = adata.copy()
+            if 'log1p' in adata_ct.uns or adata_ct.X.min() < 0:
+                # Data is scaled — undo by using raw if available, else re-normalise from .raw
+                if adata_ct.raw is not None:
+                    adata_ct = adata_ct.raw.to_adata()
+                    sc.pp.normalize_total(adata_ct, target_sum=1e4)
+                    sc.pp.log1p(adata_ct)
+
+            predictions = celltypist.annotate(
+                adata_ct,
+                model=model,
+                majority_voting=True,
+                over_clustering='spatial_region'
+            )
+            adata.obs['cell_type'] = predictions.predicted_labels['majority_voting'].astype('category')
+            print(f"CellTypist: {len(adata.obs['cell_type'].unique())} cell types identified")
+            annotated = True
+
+        except Exception as e:
+            print(f"CellTypist failed: {e}. Falling back to PanglaoDB scoring.")
+
+        # --- Fallback: PanglaoDB with z-score enrichment (not raw mean) ---
+        if not annotated:
+            try:
                 import pandas as pd
+                from scipy import stats as scipy_stats
+
+                markers_path = Path(__file__).parent.parent / 'data' / 'PanglaoDB_markers_27_Mar_2020.tsv'
+                if not markers_path.exists():
+                    raise FileNotFoundError("PanglaoDB not found")
+
                 markers_df = pd.read_csv(markers_path, sep='\t')
+                # Filter to human only
+                markers_df = markers_df[markers_df['species'].str.contains('Hs', na=False)]
 
-                # Create marker dict for annotation
                 marker_dict = {}
-                for _, row in markers_df.iterrows():
-                    cell_type = row['cell type']
-                    gene = row['official gene symbol']
+                for cell_type, grp in markers_df.groupby('cell type'):
+                    genes = [g for g in grp['official gene symbol'] if g in adata.var_names]
+                    if len(genes) >= 3:  # Only cell types with ≥3 markers present
+                        marker_dict[cell_type] = genes
 
-                    if cell_type not in marker_dict:
-                        marker_dict[cell_type] = []
-                    marker_dict[cell_type].append(gene)
-
-                # Score marker genes for each cluster
+                # Get cluster mean expression matrix (clusters × genes)
+                clusters = adata.obs['spatial_region'].unique()
                 cluster_annotations = {}
 
-                for cluster in adata.obs['spatial_region'].unique():
-                    cluster_cells = adata[adata.obs['spatial_region'] == cluster]
+                # Compute per-gene z-scores across all clusters first
+                cluster_means = np.zeros((len(clusters), adata.n_vars))
+                for i, cluster in enumerate(clusters):
+                    mask = adata.obs['spatial_region'] == cluster
+                    expr = adata[mask].X
+                    mean = np.asarray(expr.mean(axis=0)).flatten()
+                    cluster_means[i] = mean
 
-                    # Get mean expression for this cluster
-                    mean_expr = cluster_cells.X.mean(axis=0)
-                    if hasattr(mean_expr, 'A1'):
-                        mean_expr = mean_expr.A1
+                # Z-score each gene across clusters
+                gene_std = cluster_means.std(axis=0)
+                gene_std[gene_std == 0] = 1
+                cluster_zscores = (cluster_means - cluster_means.mean(axis=0)) / gene_std
 
-                    # Score each cell type
-                    best_score = 0
-                    best_type = f"Cluster_{cluster}"
+                for i, cluster in enumerate(clusters):
+                    best_score, best_type = -np.inf, f"Cluster_{cluster}"
+                    z = cluster_zscores[i]
 
                     for cell_type, genes in marker_dict.items():
-                        # Find marker genes present in dataset
-                        present_markers = [g for g in genes if g in adata.var_names]
-
-                        if present_markers:
-                            marker_indices = [adata.var_names.get_loc(g) for g in present_markers]
-                            score = mean_expr[marker_indices].mean()
-
-                            if score > best_score:
-                                best_score = score
-                                best_type = cell_type
+                        idx = [adata.var_names.get_loc(g) for g in genes]
+                        score = z[idx].mean()
+                        if score > best_score:
+                            best_score, best_type = score, cell_type
 
                     cluster_annotations[cluster] = best_type
 
-                # Map clusters to cell types (as categorical)
                 adata.obs['cell_type'] = adata.obs['spatial_region'].map(cluster_annotations).astype('category')
+                print(f"PanglaoDB: {len(adata.obs['cell_type'].unique())} cell types identified")
+                annotated = True
 
-            else:
-                # Fallback: use cluster names
-                adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
+            except Exception as e:
+                print(f"PanglaoDB annotation failed: {e}. Using cluster labels.")
 
-        except Exception as e:
-            print(f"Marker annotation failed: {e}. Using cluster labels.")
+        if not annotated:
             adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
     else:
-        # Just use cluster labels as cell types
         adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
 
     # Compute confidence scores (returns dict, not adata)
@@ -145,7 +179,9 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
         'n_clusters': int(len(adata.obs['spatial_region'].unique())),
         'n_cell_types': int(len(adata.obs['cell_type'].unique())),
         'mean_confidence': confidence_metrics.get('mean_confidence', 0.8),
-        'cluster_distribution': adata.obs['spatial_region'].value_counts().to_dict()
+        'cluster_distribution': adata.obs['spatial_region'].value_counts().to_dict(),
+        # Used by report prompt function
+        'cell_type_counts': adata.obs['cell_type'].value_counts().to_dict()
     }
 
     return adata, metrics

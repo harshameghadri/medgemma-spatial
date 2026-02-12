@@ -316,20 +316,15 @@ def generate_report(adata, features, use_multimodal):
                 st.json(safe_json(metadata))
 
             # Download button
-            report_text = f"""MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT
-{'='*80}
-
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Mode: {metadata.get('mode', 'unknown')}
-
-REPORT:
-{'-'*80}
-{report}
-{'='*80}
-
-FEATURES:
-{json.dumps(features, indent=2, default=str)}
-"""
+            sep = "=" * 80
+            dash = "-" * 80
+            report_text = (
+                f"MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT\n{sep}\n\n"
+                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"Mode: {metadata.get('mode', 'unknown')}\n\n"
+                f"REPORT:\n{dash}\n{report}\n{sep}\n\n"
+                f"FEATURES:\n{json.dumps(features, indent=2, default=str)}\n"
+            )
 
             st.download_button(
                 label="📥 Download Report (TXT)",
