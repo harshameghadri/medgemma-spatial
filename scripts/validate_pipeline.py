@@ -102,8 +102,7 @@ except Exception as e:
 print("\n[4/5] MedGemma prompt generation (demo mode)...")
 t0 = time.time()
 try:
-    sys.path.insert(0, str(Path(__file__).parent.parent / "notebooks"))
-    from medgemma_report_generator import create_anti_parroting_prompt
+    from src.report_generation.prompt_builder import generate_medgemma_prompt
 
     features = {
         'annotation': {
@@ -119,7 +118,7 @@ try:
             'n_enriched_pairs': spatial_metrics.get('neighborhood_enrichment', {}).get('n_enriched_pairs', 0),
         }
     }
-    prompt = create_anti_parroting_prompt(features)
+    prompt = generate_medgemma_prompt(features)
     assert len(prompt) > 100, "Prompt too short"
     print(f"  PASS: Prompt generated ({len(prompt)} chars, {time.time()-t0:.1f}s)")
     results['prompt'] = {'status': 'PASS', 'prompt_length': len(prompt)}
