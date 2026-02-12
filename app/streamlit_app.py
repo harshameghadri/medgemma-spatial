@@ -132,8 +132,6 @@ def create_sidebar():
 
         st.markdown("""
         **GitHub:** [medgemma-spatial](https://github.com/harshameghadri/medgemma-spatial)
-
-        Built with Claude Code
         """)
 
     return use_multimodal, use_markers, resolution

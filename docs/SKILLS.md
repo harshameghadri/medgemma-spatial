@@ -972,7 +972,7 @@ docker-compose down
 ---
 
 **Last Auto-Update**: 2026-02-06 00:00:00 UTC
-**Contributors**: Claude Code Agent Teams
+**Maintainer**: Sriharsha Meghadri
 **Repository**: `/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma`
 **Working Directory**: Always use absolute paths from repository root
 
