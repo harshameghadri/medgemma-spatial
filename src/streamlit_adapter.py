@@ -9,9 +9,19 @@ from pathlib import Path
 import tempfile
 import json
 
+import math
 import numpy as np
 import scanpy as sc
 import squidpy as sq
+
+
+def _safe_float(value, default=0.0):
+    """Return default if value is None, NaN, or infinite."""
+    try:
+        v = float(value)
+        return default if (math.isnan(v) or math.isinf(v)) else v
+    except (TypeError, ValueError):
+        return default
 
 # Import V2 pipeline functions
 from src.spatial_analysis.uncertainty_spatial_analysis import (
@@ -59,6 +69,9 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
         # Feature selection
         sc.pp.highly_variable_genes(adata, n_top_genes=2000)
 
+        # Save log1p matrix before scaling (needed for marker scoring)
+        adata.layers['log1p_norm'] = adata.X.copy()
+
         # Scale data
         sc.pp.scale(adata, max_value=10)
 
@@ -85,10 +98,12 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
             from celltypist import models
             import pandas as pd
 
-            # Build log1p counts for marker scoring
+            # Build log1p counts for marker scoring (not scaled)
             adata_ct = adata.copy()
             if adata_ct.X.min() < 0:
-                if adata_ct.raw is not None:
+                if 'log1p_norm' in adata_ct.layers:
+                    adata_ct.X = adata_ct.layers['log1p_norm'].copy()
+                elif adata_ct.raw is not None:
                     raw_adata = adata_ct.raw.to_adata()
                     raw_adata.obs = adata_ct.obs.copy()
                     adata_ct = raw_adata
@@ -183,7 +198,7 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
         'n_genes': int(adata.n_vars),
         'n_clusters': int(len(adata.obs['spatial_region'].unique())),
         'n_cell_types': int(len(adata.obs['cell_type'].unique())),
-        'mean_confidence': confidence_metrics.get('mean_confidence', 0.8),
+        'mean_confidence': _safe_float(confidence_metrics.get('mean_confidence'), 0.8),
         'cluster_distribution': adata.obs['spatial_region'].value_counts().to_dict(),
         # Used by report prompt function
         'cell_type_counts': adata.obs['cell_type'].value_counts().to_dict()

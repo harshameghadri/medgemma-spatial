@@ -34,7 +34,7 @@ def test_loki_model_loading():
     start_time = time.time()
 
     try:
-        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/loki_checkpoint.pt'
+        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/checkpoint.pt'
         device = 'cpu'
 
         if not os.path.exists(model_path):
@@ -229,7 +229,7 @@ def run_loki_tests():
     print(f"Status: {results['test_1_model_loading']['status']}")
 
     if results['test_1_model_loading']['status'] == 'PASS':
-        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/loki_checkpoint.pt'
+        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/checkpoint.pt'
         device = 'cpu'
         model, preprocess, tokenizer = loki.utils.load_model(model_path, device)
         model.eval()
