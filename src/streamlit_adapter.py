@@ -72,101 +72,106 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
     # Leiden clustering
     sc.tl.leiden(adata, resolution=resolution, key_added='spatial_region')
 
-    # Cell type annotation: celltypist → PanglaoDB fallback → cluster labels
-    if use_markers:
-        annotated = False
+    # Tissue-agnostic annotation:
+    #   Stage 1: CellTypist Immune_All_High on immune-enriched spots only
+    #            (avoids "Epithelial cells" catch-all on non-immune spots)
+    #   Stage 2: z-score marker scoring for all spots across pan-tissue panels
+    #   Merge: CellTypist wins on immune-enriched spots; markers fill the rest
+    annotated = False
 
-        # --- Primary: CellTypist (proper probabilistic annotation) ---
+    if use_markers:
         try:
             import celltypist
             from celltypist import models
+            import pandas as pd
 
-            print("Running CellTypist annotation...")
-            # Use Immune_All_Low for broad coverage; download if needed
-            model = models.Model.load(model='Immune_All_Low.pkl')
-
-            # CellTypist needs log1p-normalised counts (target_sum=1e4)
-            # Make a raw-counts copy for celltypist if data already scaled
+            # Build log1p counts for marker scoring
             adata_ct = adata.copy()
-            if 'log1p' in adata_ct.uns or adata_ct.X.min() < 0:
-                # Data is scaled — undo by using raw if available, else re-normalise from .raw
+            if adata_ct.X.min() < 0:
                 if adata_ct.raw is not None:
-                    adata_ct = adata_ct.raw.to_adata()
+                    raw_adata = adata_ct.raw.to_adata()
+                    raw_adata.obs = adata_ct.obs.copy()
+                    adata_ct = raw_adata
+                else:
                     sc.pp.normalize_total(adata_ct, target_sum=1e4)
                     sc.pp.log1p(adata_ct)
 
-            predictions = celltypist.annotate(
-                adata_ct,
-                model=model,
-                majority_voting=True,
-                over_clustering='spatial_region'
-            )
-            adata.obs['cell_type'] = predictions.predicted_labels['majority_voting'].astype('category')
-            print(f"CellTypist: {len(adata.obs['cell_type'].unique())} cell types identified")
+            X = np.array(adata_ct.X.toarray() if hasattr(adata_ct.X, 'toarray') else adata_ct.X)
+            var_names = list(adata_ct.var_names)
+
+            # Pan-tissue marker panels (works for any unknown tissue)
+            compartment_markers = {
+                'Plasma_cells':      ['JCHAIN', 'MZB1', 'SDC1', 'CD38', 'TNFRSF17'],
+                'Macrophages':       ['CD68', 'CSF1R', 'MRC1', 'MSR1', 'MARCO'],
+                'T_cells':           ['CD3D', 'CD3E', 'TRAC', 'CD2', 'CD7'],
+                'B_cells':           ['MS4A1', 'CD19', 'CD79A', 'CD79B', 'PAX5'],
+                'NK_cells':          ['NKG7', 'GNLY', 'NCAM1', 'KLRD1', 'FCGR3A'],
+                'Luminal_secretory': ['SCGB1A1', 'SCGB2A2', 'LTF', 'PIGR', 'SCGB3A1'],
+                'Luminal_HR':        ['ESR1', 'PGR', 'FOXA1', 'GATA3', 'AR'],
+                'Myoepithelial':     ['TP63', 'KRT14', 'KRT5', 'ACTA2', 'MYLK'],
+                'Stromal_CAF':       ['COL1A1', 'COL1A2', 'FAP', 'PDPN', 'POSTN'],
+                'Endothelial':       ['PECAM1', 'VWF', 'CDH5', 'CLDN5', 'ENG'],
+                'Epithelial':        ['EPCAM', 'KRT8', 'KRT18', 'KRT19', 'CDH1'],
+                'Neuronal':          ['MAP2', 'RBFOX3', 'SYP', 'SNAP25', 'GAD1'],
+                'Hepatocyte':        ['ALB', 'APOA1', 'APOB', 'CYP3A4', 'HP'],
+            }
+
+            # z-score each gene for specificity, then score each spot per compartment
+            gene_std = X.std(axis=0); gene_std[gene_std == 0] = 1
+            X_z = (X - X.mean(axis=0)) / gene_std
+
+            marker_label = np.full(adata_ct.n_obs, 'Unknown', dtype=object)
+            marker_score = np.full(adata_ct.n_obs, -np.inf)
+
+            for comp, genes in compartment_markers.items():
+                present = [g for g in genes if g in var_names]
+                if len(present) < 2:
+                    continue
+                idx = [var_names.index(g) for g in present]
+                scores = X_z[:, idx].mean(axis=1)
+                mask = scores > marker_score
+                marker_label[mask] = comp
+                marker_score[mask] = scores[mask]
+
+            # Stage 1: Identify immune-enriched spots by pan-immune marker signal
+            pan_immune_genes = [g for g in ['PTPRC', 'CD3D', 'CD19', 'MS4A1', 'CD14',
+                                             'CSF1R', 'NKG7', 'JCHAIN'] if g in var_names]
+            if pan_immune_genes:
+                idx = [var_names.index(g) for g in pan_immune_genes]
+                immune_signal = X_z[:, idx].mean(axis=1)
+                immune_mask = immune_signal >= np.percentile(immune_signal, 70)
+            else:
+                immune_mask = np.zeros(adata_ct.n_obs, dtype=bool)
+
+            # Run CellTypist only on immune-enriched spots
+            final_labels = marker_label.copy()
+            if immune_mask.sum() > 10:
+                try:
+                    print(f"CellTypist: annotating {immune_mask.sum()} immune spots...")
+                    model_imm = models.Model.load(model='Immune_All_High.pkl')
+                    adata_imm = adata_ct[immune_mask].copy()
+                    pred = celltypist.annotate(adata_imm, model=model_imm, majority_voting=False)
+                    ct_labels = pred.predicted_labels['predicted_labels'].values.astype(str)
+                    ct_probs = pred.probability_matrix.max(axis=1).values
+
+                    # Only accept CellTypist labels that are NOT its non-immune catch-alls
+                    NON_IMMUNE = {'Epithelial cells', 'Endothelial cells', 'Unassigned'}
+                    for i, (spot_idx) in enumerate(np.where(immune_mask)[0]):
+                        if ct_labels[i] not in NON_IMMUNE and ct_probs[i] > 0.4:
+                            final_labels[spot_idx] = ct_labels[i]
+                    print(f"CellTypist assigned {(~np.isin(final_labels[immune_mask], list(NON_IMMUNE))).sum()} immune spots")
+                except Exception as e:
+                    print(f"CellTypist immune pass failed: {e}")
+
+            adata.obs['cell_type'] = pd.Categorical(final_labels)
+            n_types = len(adata.obs['cell_type'].unique())
+            print(f"Annotation complete: {n_types} cell types")
             annotated = True
 
         except Exception as e:
-            print(f"CellTypist failed: {e}. Falling back to PanglaoDB scoring.")
+            print(f"Annotation failed: {e}. Using cluster labels.")
 
-        # --- Fallback: PanglaoDB with z-score enrichment (not raw mean) ---
-        if not annotated:
-            try:
-                import pandas as pd
-                from scipy import stats as scipy_stats
-
-                markers_path = Path(__file__).parent.parent / 'data' / 'PanglaoDB_markers_27_Mar_2020.tsv'
-                if not markers_path.exists():
-                    raise FileNotFoundError("PanglaoDB not found")
-
-                markers_df = pd.read_csv(markers_path, sep='\t')
-                # Filter to human only
-                markers_df = markers_df[markers_df['species'].str.contains('Hs', na=False)]
-
-                marker_dict = {}
-                for cell_type, grp in markers_df.groupby('cell type'):
-                    genes = [g for g in grp['official gene symbol'] if g in adata.var_names]
-                    if len(genes) >= 3:  # Only cell types with ≥3 markers present
-                        marker_dict[cell_type] = genes
-
-                # Get cluster mean expression matrix (clusters × genes)
-                clusters = adata.obs['spatial_region'].unique()
-                cluster_annotations = {}
-
-                # Compute per-gene z-scores across all clusters first
-                cluster_means = np.zeros((len(clusters), adata.n_vars))
-                for i, cluster in enumerate(clusters):
-                    mask = adata.obs['spatial_region'] == cluster
-                    expr = adata[mask].X
-                    mean = np.asarray(expr.mean(axis=0)).flatten()
-                    cluster_means[i] = mean
-
-                # Z-score each gene across clusters
-                gene_std = cluster_means.std(axis=0)
-                gene_std[gene_std == 0] = 1
-                cluster_zscores = (cluster_means - cluster_means.mean(axis=0)) / gene_std
-
-                for i, cluster in enumerate(clusters):
-                    best_score, best_type = -np.inf, f"Cluster_{cluster}"
-                    z = cluster_zscores[i]
-
-                    for cell_type, genes in marker_dict.items():
-                        idx = [adata.var_names.get_loc(g) for g in genes]
-                        score = z[idx].mean()
-                        if score > best_score:
-                            best_score, best_type = score, cell_type
-
-                    cluster_annotations[cluster] = best_type
-
-                adata.obs['cell_type'] = adata.obs['spatial_region'].map(cluster_annotations).astype('category')
-                print(f"PanglaoDB: {len(adata.obs['cell_type'].unique())} cell types identified")
-                annotated = True
-
-            except Exception as e:
-                print(f"PanglaoDB annotation failed: {e}. Using cluster labels.")
-
-        if not annotated:
-            adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
-    else:
+    if not annotated:
         adata.obs['cell_type'] = adata.obs['spatial_region'].astype('category')
 
     # Compute confidence scores (returns dict, not adata)
