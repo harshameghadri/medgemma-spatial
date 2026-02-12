@@ -44,6 +44,28 @@ st.set_page_config(
 )
 
 
+def safe_json(obj):
+    """Serialize dict to JSON-safe string, handling NaN/numpy types."""
+    import math
+    def _clean(o):
+        if isinstance(o, dict):
+            return {k: _clean(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [_clean(v) for v in o]
+        if isinstance(o, float) and math.isnan(o):
+            return None
+        try:
+            import numpy as np
+            if isinstance(o, (np.integer,)):
+                return int(o)
+            if isinstance(o, (np.floating,)):
+                return None if math.isnan(float(o)) else float(o)
+        except ImportError:
+            pass
+        return o
+    return _clean(obj)
+
+
 def create_header():
     """Create app header with branding."""
     st.title("🔬 MedGemma Spatial Transcriptomics")
@@ -174,8 +196,8 @@ def run_spatial_analysis(adata, use_markers, resolution):
             'annotation': annot_metrics,
             'spatial_heterogeneity': spatial_metrics,
             'uncertainty': {
-                'mean_prediction_entropy': float(adata.obs.get('prediction_entropy', [1.0]).mean())
-                    if 'prediction_entropy' in adata.obs else 1.0
+                'mean_prediction_entropy': float(adata.obs['prediction_entropy'].mean())
+                    if 'prediction_entropy' in adata.obs.columns else 1.0
             }
         }
 
@@ -293,7 +315,7 @@ def generate_report(adata, features, use_multimodal):
 
             # Metadata
             with st.expander("📋 Report Metadata"):
-                st.json(metadata)
+                st.json(safe_json(metadata))
 
             # Download button
             report_text = f"""MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT
@@ -308,7 +330,7 @@ REPORT:
 {'='*80}
 
 FEATURES:
-{json.dumps(features, indent=2)}
+{json.dumps(features, indent=2, default=str)}
 """
 
             st.download_button(
