@@ -26,7 +26,7 @@ jobs:
         cp requirements.txt /tmp/hf-deploy/requirements-pipeline.txt
 
         cd /tmp/hf-deploy
-        git init
+        git init -b main
         git config user.email "actions@github.com"
         git config user.name "GitHub Actions"
         git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/medgemma-spatial
