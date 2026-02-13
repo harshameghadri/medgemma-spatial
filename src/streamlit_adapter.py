@@ -12,7 +12,8 @@ import json
 import math
 import numpy as np
 import scanpy as sc
-import squidpy as sq
+# squidpy imported lazily inside calculate_spatial_heterogeneity to avoid
+# cudf/RAPIDS initialization on GPUs with compute capability < 7.0 (e.g. P100)
 
 
 def _safe_float(value, default=0.0):
@@ -214,6 +215,7 @@ def calculate_spatial_heterogeneity(adata):
     Wrapper for V2 pipeline spatial analysis functions.
     Returns metrics_dict.
     """
+    import squidpy as sq  # lazy import — avoids cudf init on low-CC GPUs
     metrics = {}
 
     # Ensure spatial graph exists
