@@ -1,5 +1,4 @@
 import Head from 'next/head';
-import '../styles/globals.css';
 
 const HF_SPACE_URL = 'https://harshameghadri-medgemma-spatial.hf.space';
 const GITHUB_URL = 'https://github.com/harshameghadri/medgemma-spatial';
