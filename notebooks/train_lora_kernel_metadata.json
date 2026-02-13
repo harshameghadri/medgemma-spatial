@@ -1,0 +1,16 @@
+{
+  "id": "harshameghadri/medgemma-lora-training",
+  "title": "MedGemma LoRA Fine-Tuning",
+  "code_file": "train_lora.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "harshameghadri/medgemma-spatial-data"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}
