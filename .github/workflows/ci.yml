@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, devel, fix/ci-and-tests ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main, develop, devel ]
 
 jobs:
   test:
@@ -25,34 +25,49 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements.txt') }}
         restore-keys: |
-          ${{ runner.os }}-pip-
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
 
-    - name: Install dependencies
+    - name: Install CI dependencies (no GPU packages)
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov black ruff mypy
+        pip install \
+          anndata==0.11.3 \
+          numpy">=1.23,<2.0" \
+          pandas">=1.5" \
+          scipy">=1.8" \
+          scikit-learn">=0.24" \
+          matplotlib">=3.6" \
+          pillow">=9.0" \
+          tqdm">=4.60" \
+          pyyaml">=5.1" \
+          datasets">=3.0.0" \
+          transformers==4.45.1 \
+          accelerate">=1.12.0" \
+          pytest">=7.0" \
+          pytest-cov \
+          black">=22.0" \
+          "ruff>=0.1.0" \
+          "mypy>=1.0"
+        # GPU/CUDA packages (torch, bitsandbytes, peft, trl, scanpy, squidpy) skipped in CI
 
     - name: Lint with ruff
       run: |
-        ruff check src/ tests/
-      continue-on-error: true
+        ruff check src/ scripts/generate_training_data.py scripts/train_lora.py scripts/benchmark_lora.py
 
     - name: Format check with black
       run: |
-        black --check src/ tests/
-      continue-on-error: true
+        black --check src/ scripts/generate_training_data.py scripts/train_lora.py scripts/benchmark_lora.py
 
     - name: Type check with mypy
       run: |
-        mypy src/
+        mypy src/ --ignore-missing-imports
       continue-on-error: true
 
     - name: Run tests
       run: |
-        pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing
+        pytest tests/ --cov=src --cov-report=xml --cov-report=term-missing -v
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
