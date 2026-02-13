@@ -307,7 +307,7 @@ def call_claude(client, user_prompt, max_retries=3, backoff=5.0):
     for attempt in range(1, max_retries + 1):
         try:
             message = client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model="claude-sonnet-4-5",
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
