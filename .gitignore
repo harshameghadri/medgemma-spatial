@@ -176,3 +176,8 @@ app/build.sh
 *.tmp
 .DS_Store
 medgemma-spatial/
+
+# Vercel/Next.js
+vercel/node_modules/
+vercel/.next/
+vercel/.vercel/
