@@ -1,0 +1,30 @@
+title = "MedGemma Secret Scanning Config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "hf-token"
+description = "HuggingFace API Token"
+regex = '''hf_[a-zA-Z0-9]{34,}'''
+tags = ["huggingface", "api-token"]
+
+[[rules]]
+id = "kaggle-token"
+description = "Kaggle API Key"
+regex = '''[a-z0-9]{32}'''
+paths = ["kaggle.json", ".kaggle/kaggle.json"]
+tags = ["kaggle", "api-token"]
+
+[allowlist]
+description = "Allowed patterns"
+regexes = [
+    "HF_TOKEN_REDACTED",
+    "hf_your_token_here",
+    "hf_xxxxxxxxxx",
+]
+paths = [
+    ".env",
+    ".env.example",
+    "*.example",
+]
