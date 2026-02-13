@@ -20,3 +20,11 @@ jobs:
       run: |
         git remote add hf https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/medgemma-spatial
         git push hf main --force
+
+  deploy-vercel:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Deploy to Vercel
+      run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --cwd vercel/
+      continue-on-error: true

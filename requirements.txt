@@ -54,7 +54,7 @@ ipykernel>=6.0
 notebook>=6.4
 
 # Optional: Dask for parallel processing
-dask[dataframe]>=2026.1.0
+dask[dataframe]>=2024.1.0
 dask-expr>=1.1
 
 # Code Quality (Development only)
