@@ -310,3 +310,50 @@ def generate_report_with_medgemma(features_json_path: str,
         json.dump(result, f, indent=2)
 
     return result
+
+
+def create_anti_parroting_prompt(features: Dict) -> str:
+    """Create prompt that encourages synthesis, not regurgitation of raw data."""
+    annotation = features.get('annotation', {})
+    cell_types = (
+        annotation.get('cell_type_counts') or
+        annotation.get('cluster_distribution') or
+        {}
+    )
+    n_spots = sum(cell_types.values()) if cell_types else annotation.get('n_spots', 1)
+
+    major_populations = {k: v for k, v in cell_types.items()
+                        if v / max(n_spots, 1) > 0.10 and k != 'Unknown'}
+    immune_cells = {k: v for k, v in cell_types.items()
+                    if any(term in k.lower() for term in
+                          ['t cells', 'b cells', 'nk cells', 'macrophage',
+                           'plasma cells', 'dendritic', 'neutrophil'])}
+
+    has_spatial_heterogeneity = features.get('spatial_heterogeneity', {}).get('morans_i_mean', 0) > 0.3
+    has_high_uncertainty = features.get('uncertainty', {}).get('mean_prediction_entropy', 0) > 1.5
+
+    return f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
+
+TASK: Generate a concise clinical pathology report (150-200 words) that synthesizes the biological findings.
+
+AVAILABLE INFORMATION:
+- Tissue composition shows {len(major_populations)} major cell populations
+- Immune infiltration detected with {len(immune_cells)} immune cell types present
+- Spatial organization: {'heterogeneous' if has_spatial_heterogeneity else 'relatively uniform'}
+- Tissue complexity: {'high diversity' if has_high_uncertainty else 'defined regions'}
+
+REPORTING REQUIREMENTS:
+1. Describe the predominant tissue architecture and cellular composition
+2. Characterize the immune microenvironment and infiltration patterns
+3. Comment on spatial organization and tissue heterogeneity
+4. Provide brief clinical or biological interpretation
+5. Note any unexpected or significant findings
+
+CRITICAL:
+- DO NOT list cell type percentages or raw counts
+- DO NOT enumerate spatial metrics or statistics
+- SYNTHESIZE biological meaning, don't summarize data
+- Use domain knowledge to interpret patterns
+- Focus on clinical/biological significance
+
+Generate the report now:"""

@@ -29,7 +29,7 @@ try:
         generate_multimodal_report,
         generate_textonly_fallback
     )
-    from notebooks.medgemma_report_generator import create_anti_parroting_prompt
+    from src.report_generation.prompt_builder import create_anti_parroting_prompt
 except ImportError as e:
     st.error(f"Missing dependencies: {e}")
     st.stop()
