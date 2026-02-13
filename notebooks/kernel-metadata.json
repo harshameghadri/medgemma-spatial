@@ -1,0 +1,14 @@
+{
+  "id": "harshameghadri/medgemma-spatial-transcriptomics-analysis",
+  "title": "MedGemma Spatial Transcriptomics Analysis",
+  "code_file": "kaggle_submission.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["harshameghadri/medgemma-spatial-data"],
+  "competition_sources": ["med-gemma-impact-challenge"],
+  "kernel_sources": []
+}
