@@ -19,7 +19,19 @@ jobs:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
         HF_USERNAME: ${{ secrets.HF_USERNAME }}
       run: |
+        # Build a clean deploy tree: app/ + src/ only (no large notebooks)
+        mkdir -p /tmp/hf-deploy
+        cp -r app/. /tmp/hf-deploy/
+        cp -r src /tmp/hf-deploy/src
+        cp requirements.txt /tmp/hf-deploy/requirements-pipeline.txt
+
+        cd /tmp/hf-deploy
+        git init
+        git config user.email "actions@github.com"
+        git config user.name "GitHub Actions"
         git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/medgemma-spatial
+        git add .
+        git commit -m "deploy: update Space from GitHub Actions"
         git push hf main --force
 
   deploy-vercel:
