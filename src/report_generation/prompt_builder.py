@@ -16,12 +16,15 @@ def load_features_json(json_path: str) -> Dict:
         return json.load(f)
 
 
-def generate_medgemma_prompt(features: Dict) -> str:
+def generate_medgemma_prompt(features: Dict, moa_focus: bool = True) -> str:
     """
     Build a clinical pathology prompt from spatial features.
 
-    Structures the request so MedGemma synthesizes biological meaning
-    rather than listing raw numbers back from the input.
+    Args:
+        features: Spatial analysis output dict (annotation + spatial_heterogeneity + uncertainty)
+        moa_focus: When True, prompt targets mechanism of action, research linkage,
+                   and therapeutic strategy — used with the fine-tuned LoRA adapter.
+                   When False, uses the original concise synthesis prompt.
     """
     annotation = features.get('annotation', {})
     cell_types = (
@@ -39,10 +42,60 @@ def generate_medgemma_prompt(features: Dict) -> str:
                            ['t cells', 'b cells', 'nk cells', 'macrophage',
                             'plasma cells', 'dendritic', 'neutrophil'])}
 
-    has_spatial_heterogeneity = features.get('spatial_heterogeneity', {}).get('morans_i_mean', 0) > 0.3
-    has_high_uncertainty = features.get('uncertainty', {}).get('mean_prediction_entropy', 0) > 1.5
+    spatial = features.get('spatial_heterogeneity', {})
+    uncertainty = features.get('uncertainty', {})
+    morans_i = spatial.get('morans_i_mean', 0)
+    entropy = uncertainty.get('mean_prediction_entropy', 0)
+    has_spatial_heterogeneity = morans_i > 0.3
+    has_high_uncertainty = entropy > 1.5
+    n_enriched_pairs = spatial.get('n_enriched_pairs', 0)
 
-    prompt = f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
+    if moa_focus:
+        # Classify spatial phenotype to help model orient its MoA reasoning
+        immune_fraction = sum(immune_cells.values()) / max(n_spots, 1)
+        if immune_fraction > 0.25 and morans_i > 0.4:
+            phenotype_hint = "hot immune-infiltrated (high immune density + strong spatial clustering)"
+        elif immune_fraction < 0.05:
+            phenotype_hint = "cold immune desert (minimal immune infiltration)"
+        elif morans_i < 0.2 and entropy > 1.2:
+            phenotype_hint = "heterogeneous / poorly organised"
+        elif any('stromal' in k.lower() or 'caf' in k.lower() or 'fibroblast' in k.lower()
+                 for k in major_populations):
+            phenotype_hint = "stromal-rich / potentially fibrotic"
+        else:
+            phenotype_hint = "mixed compartment (epithelial-immune interface)"
+
+        prompt = f"""You are an expert computational pathologist specializing in spatial transcriptomics and tumour immunology.
+
+SPATIAL TRANSCRIPTOMICS DATA SUMMARY:
+- Tissue phenotype: {phenotype_hint}
+- Major compartments: {len(major_populations)} populations (>{10}% of tissue)
+- Immune diversity: {len(immune_cells)} distinct immune populations
+- Spatial autocorrelation (Moran's I): {'strong' if morans_i > 0.5 else 'moderate' if morans_i > 0.25 else 'weak'} ({morans_i:.2f})
+- Tissue entropy: {'high heterogeneity' if has_high_uncertainty else 'moderate' if entropy > 0.8 else 'low — organised structure'} ({entropy:.2f})
+- Spatially co-enriched cell pairs: {n_enriched_pairs}
+
+Generate a 280-320 word expert pathology report structured as follows:
+
+1. TISSUE MICROENVIRONMENT (2-3 sentences): Describe the dominant spatial architecture and cellular organisation.
+
+2. MECHANISM OF ACTION (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism (e.g., TGF-β-mediated exclusion, IFN-γ/CXCL9 chemokine gradient, VEGF-driven angiogenic niche). Explain how spatial co-localisation or exclusion patterns support this mechanism.
+
+3. RESEARCH CONTEXT (1-2 sentences): Reference 1-2 published findings or clinical cohort studies that corroborate this pattern (cite author surname, journal, year).
+
+4. THERAPEUTIC IMPLICATIONS (2-3 sentences): Recommend a specific evidence-based therapeutic strategy or combination (name drug class or agent where possible). State the biological rationale for this approach.
+
+5. VALIDATION CAVEATS (1 sentence): Note measurement limitations and suggest a targeted validation assay (IHC, flow cytometry, etc.).
+
+CRITICAL RULES:
+- DO NOT list raw cell counts or exact metric values
+- SYNTHESISE mechanisms — do not enumerate observations
+- Every claim must follow logically from the spatial pattern described
+
+Report:"""
+
+    else:
+        prompt = f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
 
 TASK: Generate a concise clinical pathology report (150-200 words) that synthesizes the biological findings.
 
@@ -115,9 +168,9 @@ Report:"""
 
 def evaluate_report_quality(report: str, features: Dict) -> Dict:
     """
-    Check a generated report for data regurgitation and clinical quality.
+    Check a generated report for data regurgitation, clinical quality, and MoA depth.
 
-    Returns a dict with quality flags and a risk score.
+    Returns a dict with quality flags, MoA scores, and an overall risk score.
     """
     report_lower = report.lower()
 
@@ -134,6 +187,24 @@ def evaluate_report_quality(report: str, features: Dict) -> Dict:
     clinical_terms = ['prognosis', 'diagnosis', 'treatment', 'clinical', 'therapeutic',
                       'patient', 'outcome', 'response']
     has_clinical_context = any(term in report_lower for term in clinical_terms)
+
+    # MoA depth scoring (new — targets fine-tuned adapter quality)
+    moa_terms = ['pathway', 'signaling', 'signalling', 'mechanism', 'via', 'mediated by',
+                 'driven by', '-dependent', 'axis', 'crosstalk', 'ligand', 'receptor',
+                 'tgf', 'ifn', 'vegf', 'cxcl', 'pd-l1', 'pd-1', 'ctla', 'il-', 'tnf']
+    moa_hits = sum(1 for t in moa_terms if t in report_lower)
+    has_moa = moa_hits >= 2
+
+    research_terms = ['et al', 'consistent with', 'described by', 'shown by', 'reported by',
+                      'published', 'study', 'cohort', 'trial', 'nature', 'cell', 'science',
+                      'cancer research', 'clinical cancer']
+    has_research_linkage = any(t in report_lower for t in research_terms)
+
+    mitigation_terms = ['treatment', 'therapeutic', 'inhibit', 'blockade', 'inhibitor',
+                        'checkpoint', 'immunotherapy', 'chemotherapy', 'radiation', 'agent',
+                        'combination', 'anti-pd', 'car-t', 'targeted']
+    mitigation_hits = sum(1 for t in mitigation_terms if t in report_lower)
+    has_mitigation = mitigation_hits >= 2
 
     risk_score = 0
     if has_raw_numbers:
@@ -160,6 +231,11 @@ def evaluate_report_quality(report: str, features: Dict) -> Dict:
         'has_clinical_context': has_clinical_context,
         'parroting_risk': parroting_risk,
         'risk_score': risk_score,
+        # MoA depth metrics (fine-tuned adapter targets)
+        'has_moa': has_moa,
+        'moa_hits': moa_hits,
+        'has_research_linkage': has_research_linkage,
+        'has_mitigation': has_mitigation,
     }
 
 
