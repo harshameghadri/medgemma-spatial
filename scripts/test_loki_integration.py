@@ -18,6 +18,14 @@ import scanpy as sc
 import torch
 from PIL import Image
 
+# PyTorch 2.6 compatibility: override open_clip's checkpoint loading to use weights_only=False
+# The Loki checkpoint was saved with older PyTorch and contains numpy globals
+import open_clip.factory as _ocf
+_orig_load_state_dict = _ocf.load_state_dict
+def _patched_load_state_dict(checkpoint_path, device=None, weights_only=True):
+    return _orig_load_state_dict(checkpoint_path, device=device, weights_only=False)
+_ocf.load_state_dict = _patched_load_state_dict
+
 import loki.utils
 import loki.preprocess
 
@@ -34,7 +42,7 @@ def test_loki_model_loading():
     start_time = time.time()
 
     try:
-        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/loki_checkpoint.pt'
+        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/checkpoint.pt'
         device = 'cpu'
 
         if not os.path.exists(model_path):
@@ -84,10 +92,12 @@ def test_generate_gene_embeddings(adata):
 
         house_keeping_genes = pd.read_csv(house_keeping_path, index_col=0)
 
+        import scipy.sparse as sp
+        is_sparse = sp.issparse(adata.X)
         top_k_genes_str = loki.preprocess.generate_gene_df(
             adata,
             house_keeping_genes,
-            todense=True
+            todense=is_sparse
         )
 
         elapsed = time.time() - start_time
@@ -119,10 +129,12 @@ def test_encode_spatial_spots(adata, model, tokenizer, device='cpu'):
         house_keeping_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/housekeeping_genes.csv'
         house_keeping_genes = pd.read_csv(house_keeping_path, index_col=0)
 
+        import scipy.sparse as sp
+        is_sparse = sp.issparse(adata.X)
         top_k_genes_str = loki.preprocess.generate_gene_df(
             adata,
             house_keeping_genes,
-            todense=True
+            todense=is_sparse
         )
 
         text_embeddings = loki.utils.encode_text_df(
@@ -229,7 +241,7 @@ def run_loki_tests():
     print(f"Status: {results['test_1_model_loading']['status']}")
 
     if results['test_1_model_loading']['status'] == 'PASS':
-        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/loki_checkpoint.pt'
+        model_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/checkpoint.pt'
         device = 'cpu'
         model, preprocess, tokenizer = loki.utils.load_model(model_path, device)
         model.eval()
@@ -244,7 +256,8 @@ def run_loki_tests():
             if results['test_3_encode_spots']['status'] == 'PASS':
                 house_keeping_path = '/Users/sriharshameghadri/randomAIProjects/kaggle/medGemma/data/housekeeping_genes.csv'
                 house_keeping_genes = pd.read_csv(house_keeping_path, index_col=0)
-                top_k_genes_str = loki.preprocess.generate_gene_df(adata, house_keeping_genes, todense=True)
+                import scipy.sparse as sp
+                top_k_genes_str = loki.preprocess.generate_gene_df(adata, house_keeping_genes, todense=sp.issparse(adata.X))
                 embeddings = loki.utils.encode_text_df(model, tokenizer, top_k_genes_str, 'label', device)
 
                 results['test_4_feature_extraction'] = test_extract_loki_features(adata, embeddings)
