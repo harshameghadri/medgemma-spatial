@@ -148,20 +148,10 @@ streamlit run app/streamlit_app.py
 
 ## 🛡️ Privacy & Security
 
-✅ **HIPAA-Compliant**:
-- No data leaves your device
-- No cloud APIs or external calls
-- All processing local
 
 ✅ **Data Protection**:
-- Tissue-blind operation (no tissue type exposed)
 - Anonymized sample IDs
-- No raw count exposure
 
-✅ **Validation**:
-- 9/9 adversarial tests passed
-- 0 tissue keywords detected
-- Anti-parroting prompts
 
 ---
 
@@ -177,13 +167,6 @@ streamlit run app/streamlit_app.py
 ## 🏆 Kaggle Competition
 
 This project was developed for the **Kaggle MedGemma Impact Challenge**.
-
-**Evaluation Criteria** (5/5):
-1. ✅ Effective use of HAI-DEF models (MedGemma 1.5 4B)
-2. ✅ Healthcare problem importance (pathology workflow)
-3. ✅ Real-world impact (privacy, speed, accessibility)
-4. ✅ Technical feasibility (production-ready)
-5. ✅ Communication quality (clear documentation)
 
 ---
 
@@ -215,7 +198,5 @@ MIT License - See [LICENSE](https://github.com/harshameghadri/medgemma-spatial/b
 - **Competition**: Kaggle MedGemma Impact Challenge
 
 ---
-
-**Built with ❤️ for pathologists and spatial biology researchers**
 
 *Last Updated: 2026-02-05*
