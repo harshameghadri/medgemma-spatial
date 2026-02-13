@@ -17,8 +17,9 @@ jobs:
     - name: Push to HuggingFace Space
       env:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        HF_USERNAME: ${{ secrets.HF_USERNAME }}
       run: |
-        git remote add hf https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/medgemma-spatial
+        git remote add hf https://$HF_USERNAME:$HF_TOKEN@huggingface.co/spaces/$HF_USERNAME/medgemma-spatial
         git push hf main --force
 
   deploy-vercel:
