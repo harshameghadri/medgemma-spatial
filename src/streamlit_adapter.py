@@ -117,17 +117,28 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
 
             # Pan-tissue marker panels (works for any unknown tissue)
             compartment_markers = {
+                # --- Immune ---
                 'Plasma_cells':      ['JCHAIN', 'MZB1', 'SDC1', 'CD38', 'TNFRSF17'],
                 'Macrophages':       ['CD68', 'CSF1R', 'MRC1', 'MSR1', 'MARCO'],
                 'T_cells':           ['CD3D', 'CD3E', 'TRAC', 'CD2', 'CD7'],
                 'B_cells':           ['MS4A1', 'CD19', 'CD79A', 'CD79B', 'PAX5'],
                 'NK_cells':          ['NKG7', 'GNLY', 'NCAM1', 'KLRD1', 'FCGR3A'],
+                'Dendritic_cells':   ['CLEC9A', 'FCER1A', 'CD1C', 'ITGAX', 'HLA-DRA'],
+                'Mast_cells':        ['KIT', 'TPSAB1', 'CPA3', 'MS4A2', 'FCER1G'],
+                # --- Epithelial ---
+                'Epithelial':        ['EPCAM', 'KRT8', 'KRT18', 'KRT19', 'CDH1'],
                 'Luminal_secretory': ['SCGB1A1', 'SCGB2A2', 'LTF', 'PIGR', 'SCGB3A1'],
                 'Luminal_HR':        ['ESR1', 'PGR', 'FOXA1', 'GATA3', 'AR'],
                 'Myoepithelial':     ['TP63', 'KRT14', 'KRT5', 'ACTA2', 'MYLK'],
-                'Stromal_CAF':       ['COL1A1', 'COL1A2', 'FAP', 'PDPN', 'POSTN'],
+                'Goblet_cells':      ['MUC2', 'TFF3', 'FCGBP', 'SPDEF', 'AGR2'],
+                'Enteroendocrine':   ['CHGA', 'CHGB', 'NEUROD1', 'PAX4', 'ISL1'],
+                'Tuft_cells':        ['POU2F3', 'DCLK1', 'TRPM5', 'CHAT', 'GFI1B'],
+                # --- Stromal ---
+                'CAF_generic':       ['COL1A1', 'COL1A2', 'FAP', 'PDPN', 'POSTN'],
+                'CAF_myCAF':         ['ACTA2', 'MYH11', 'TAGLN', 'TPM2', 'PDGFRB'],
+                'CAF_iCAF':          ['IL6', 'CXCL12', 'PDGFRA', 'HAS1', 'CFD'],
                 'Endothelial':       ['PECAM1', 'VWF', 'CDH5', 'CLDN5', 'ENG'],
-                'Epithelial':        ['EPCAM', 'KRT8', 'KRT18', 'KRT19', 'CDH1'],
+                # --- Other tissue ---
                 'Neuronal':          ['MAP2', 'RBFOX3', 'SYP', 'SNAP25', 'GAD1'],
                 'Hepatocyte':        ['ALB', 'APOA1', 'APOB', 'CYP3A4', 'HP'],
             }
@@ -279,5 +290,16 @@ def calculate_spatial_heterogeneity(adata):
     except Exception as e:
         print(f"Spatial entropy failed: {e}")
         metrics['spatial_entropy'] = {'mean': 0.0, 'std': 0.0, 'ci_lower': 0.0, 'ci_upper': 0.0}
+
+    # Stage 4: Gene signature scoring + boundary detection
+    try:
+        from src.spatial_analysis.gene_signature_scoring import run_full_signature_analysis
+        sig_results, _ = run_full_signature_analysis(
+            adata, cell_type_col='cell_type' if 'cell_type' in adata.obs.columns else 'spatial_region'
+        )
+        metrics['gene_signatures'] = sig_results
+    except Exception as e:
+        print(f"Gene signature analysis failed: {e}")
+        metrics['gene_signatures'] = {}
 
     return metrics
