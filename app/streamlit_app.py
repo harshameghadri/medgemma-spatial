@@ -91,12 +91,6 @@ def create_sidebar():
             help="Requires MedGemma 1.5. Falls back to text-only if unavailable."
         )
 
-        use_markers = st.checkbox(
-            "Marker-based Annotation",
-            value=True,
-            help="Use PanglaoDB markers for cell type identification"
-        )
-
         resolution = st.slider(
             "Leiden Resolution",
             min_value=0.1,
@@ -113,14 +107,14 @@ def create_sidebar():
         **Pipeline:**
         1. Quality control & normalization
         2. Spatial clustering (Leiden)
-        3. Marker-based cell type annotation
+        3. CellTypist + z-score panel annotation
         4. Spatial heterogeneity analysis
         5. MedGemma report generation
 
         **Models:**
         - Scanpy/Squidpy for spatial analysis
-        - PanglaoDB markers for annotation
-        - MedGemma 1.5 for report generation
+        - CellTypist (immune) + z-score panels
+        - MedGemma 4B-it for report generation
 
         **Data Privacy:**
         - Tissue-blind prompts (no identifying info)
@@ -134,7 +128,7 @@ def create_sidebar():
         **GitHub:** [medgemma-spatial](https://github.com/harshameghadri/medgemma-spatial)
         """)
 
-    return use_multimodal, use_markers, resolution
+    return use_multimodal, resolution
 
 
 def load_data(uploaded_file):
@@ -347,7 +341,7 @@ def main():
     create_header()
 
     # Sidebar settings
-    use_multimodal, use_markers, resolution = create_sidebar()
+    use_multimodal, resolution = create_sidebar()
 
     # File upload
     st.header("📁 Upload Data")
@@ -388,7 +382,7 @@ def main():
     if st.button("🚀 Run Analysis", type="primary"):
 
         # Analysis
-        adata, features, success = run_spatial_analysis(adata, use_markers, resolution)
+        adata, features, success = run_spatial_analysis(adata, True, resolution)
 
         if not success:
             st.error("Analysis failed. Check errors above.")

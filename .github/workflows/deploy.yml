@@ -23,6 +23,7 @@ jobs:
         mkdir -p /tmp/hf-deploy
         cp -r app/. /tmp/hf-deploy/
         cp -r src /tmp/hf-deploy/src
+        cp -r .streamlit /tmp/hf-deploy/.streamlit
 
         # Write HF Spaces README with required YAML frontmatter
         cat > /tmp/hf-deploy/README.md << 'READMEEOF'
@@ -75,7 +76,8 @@ jobs:
         CMD ["streamlit", "run", "streamlit_app.py", \
              "--server.port=8501", "--server.address=0.0.0.0", \
              "--server.headless=true", "--server.fileWatcherType=none", \
-             "--browser.gatherUsageStats=false"]
+             "--browser.gatherUsageStats=false", \
+             "--server.maxUploadSize=1024"]
         DOCKEREOF
 
         cd /tmp/hf-deploy
