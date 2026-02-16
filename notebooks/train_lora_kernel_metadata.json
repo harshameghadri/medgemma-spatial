@@ -1,5 +1,5 @@
 {
-  "id": "harshameghadri/medgemma-lora-training",
+  "id": "harshameghadri/medgemma-lora-fine-tuning",
   "title": "MedGemma LoRA Fine-Tuning",
   "code_file": "train_lora.ipynb",
   "language": "python",

@@ -23,15 +23,20 @@ proj, tmp, token = sys.argv[1], sys.argv[2], sys.argv[3]
 nb = json.load(open(f"{proj}/notebooks/train_lora.ipynb"))
 patched = 0
 for cell in nb['cells']:
-    src = cell.get('source', [])
-    new_src = []
-    for line in src:
-        if 'HF_TOKEN_PLACEHOLDER' in line:
-            new_src.append(line.replace('HF_TOKEN_PLACEHOLDER', token))
-            patched += 1
-        else:
-            new_src.append(line)
-    cell['source'] = new_src
+    src = cell.get('source', '')
+    if isinstance(src, list):
+        new_src = []
+        for line in src:
+            if 'HF_TOKEN_PLACEHOLDER' in line:
+                new_src.append(line.replace('HF_TOKEN_PLACEHOLDER', token))
+                patched += 1
+            else:
+                new_src.append(line)
+        cell['source'] = new_src
+    else:
+        if 'HF_TOKEN_PLACEHOLDER' in src:
+            cell['source'] = src.replace('HF_TOKEN_PLACEHOLDER', token)
+            patched += src.count('HF_TOKEN_PLACEHOLDER')
 
 json.dump(nb, open(f"{tmp}/train_lora.ipynb", 'w'), indent=1)
 print(f'Notebook patched ({patched} substitution(s))')
