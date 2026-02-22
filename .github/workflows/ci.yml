@@ -34,6 +34,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install \
           anndata==0.11.3 \
+          scanpy">=1.9" \
           numpy">=1.23,<2.0" \
           pandas">=1.5" \
           scipy">=1.8" \
@@ -50,7 +51,7 @@ jobs:
           black">=22.0" \
           "ruff>=0.1.0" \
           "mypy>=1.0"
-        # GPU/CUDA packages (torch, bitsandbytes, peft, trl, scanpy, squidpy) skipped in CI
+        # GPU/CUDA packages (torch, bitsandbytes, peft, trl, squidpy) skipped in CI
 
     - name: Lint with ruff
       run: |
