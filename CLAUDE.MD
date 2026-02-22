@@ -1,8 +1,14 @@
 # CLAUDE.MD - Ultimate Guide for AI Assistant
 
-**Last Updated**: 2026-01-24
-**Project Status**: Week 1 Day 1 (Scanpy baseline)
-**Next Milestone**: Loki/NicheFormer exploration (Day 3-6)
+**Last Updated**: 2026-02-13
+**Project Status**: Week 3 (Deployment)
+**Next Milestone**: HF Spaces live + LoRA training
+
+## COMMIT RULES — MANDATORY
+
+**NEVER include `Co-Authored-By` lines in any commit message.**
+No "Co-Authored-By: Claude", no AI attribution, nothing.
+Commit messages must be plain descriptive text only.
 
 ---
 
