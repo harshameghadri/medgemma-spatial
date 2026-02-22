@@ -6,8 +6,9 @@ Integrates spatial transcriptomics features with H&E tissue images for
 comprehensive pathology reports using MedGemma 1.5 multimodal capabilities.
 """
 
+import os
 from PIL import Image
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 import torch
 import numpy as np
 from typing import Dict, Optional, Tuple
@@ -163,9 +164,9 @@ Report:"""
 def generate_multimodal_report(
     adata,
     features: Dict,
-    model_id: str = "google/medgemma-1.5-4b-it",
-    device: str = "mps",
-    max_new_tokens: int = 500,
+    model_id: str = "google/medgemma-4b-it",
+    device: str = "cpu",
+    max_new_tokens: int = 400,
     library_id: Optional[str] = None
 ) -> Tuple[str, Dict]:
     """
@@ -179,8 +180,8 @@ def generate_multimodal_report(
         Spatial transcriptomics features
     model_id : str, default="google/medgemma-1.5-4b-it"
         HuggingFace model identifier
-    device : str, default="mps"
-        Device for inference ('mps', 'cuda', or 'cpu')
+    device : str, default="cpu"
+        Device for inference ('cpu', 'cuda', or 'mps')
     max_new_tokens : int, default=500
         Maximum tokens to generate
     library_id : str, optional
@@ -216,21 +217,27 @@ def generate_multimodal_report(
     prompt = create_multimodal_prompt(features)
     print(f"  ✓ Prompt length: {len(prompt)} characters")
 
-    print(f"\n[4/5] Loading MedGemma 1.5 multimodal model ({model_id})...")
+    hf_token = os.environ.get('HF_TOKEN')
+    print(f"\n[4/5] Loading MedGemma multimodal model ({model_id})...")
     try:
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_quant_type="nf4",
+        )
         pipe = pipeline(
             "image-text-to-text",
             model=model_id,
-            torch_dtype=torch.bfloat16,
-            device=device
+            model_kwargs={"quantization_config": bnb_config, "low_cpu_mem_usage": True},
+            token=hf_token,
+            device_map="auto",
         )
-        print(f"  ✓ Model loaded on device: {device}")
+        print(f"  ✓ Model loaded (4-bit quantized)")
     except Exception as e:
         print(f"  ✗ Model loading failed: {e}")
         print("\nTROUBLESHOOTING:")
-        print("  1. Check model ID is correct (google/medgemma-1.5-4b-it)")
-        print("  2. Ensure transformers>=4.45.0 installed")
-        print("  3. Try device='cpu' if MPS fails")
+        print("  1. Ensure HF_TOKEN is set in Space secrets")
+        print("  2. Ensure transformers>=4.45.0 and bitsandbytes>=0.41.0 installed")
         raise
 
     print("\n[5/5] Generating multimodal report...")
@@ -267,11 +274,11 @@ def generate_multimodal_report(
 def generate_textonly_fallback(
     features: Dict,
     model_id: str = "google/medgemma-4b-it",
-    device: str = "mps",
-    max_new_tokens: int = 500
+    device: str = "cpu",
+    max_new_tokens: int = 400
 ) -> Tuple[str, Dict]:
     """
-    Fallback text-only report generation if multimodal fails.
+    Text-only report generation using 4-bit quantized MedGemma.
 
     Parameters
     ----------
@@ -280,7 +287,7 @@ def generate_textonly_fallback(
     model_id : str
         Text-only model ID
     device : str
-        Device for inference
+        Unused (quantized model uses device_map=auto)
     max_new_tokens : int
         Maximum tokens to generate
 
@@ -289,17 +296,22 @@ def generate_textonly_fallback(
     tuple of (str, dict)
         Generated report and metadata
     """
-    from transformers import AutoTokenizer, AutoModelForCausalLM
-
-    print("\n[TEXT-ONLY FALLBACK MODE]")
+    print("\n[TEXT-ONLY REPORT GENERATION]")
     print("="*80)
 
-    print(f"\n[1/3] Loading {model_id}...")
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    hf_token = os.environ.get('HF_TOKEN')
+    print(f"\n[1/3] Loading {model_id} (4-bit quantized)...")
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.float16,
+        bnb_4bit_quant_type="nf4",
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=torch.bfloat16,
+        quantization_config=bnb_config,
         device_map="auto",
+        token=hf_token,
         low_cpu_mem_usage=True
     )
     print(f"  ✓ Model loaded")

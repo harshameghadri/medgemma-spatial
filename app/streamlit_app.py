@@ -132,22 +132,25 @@ def create_sidebar():
 
 
 def load_data(uploaded_file):
-    """Load H5AD file from upload."""
+    """Load H5AD or 10x HDF5 file from upload."""
     with st.spinner("Loading spatial data..."):
         try:
-            # Save to temp file
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.h5ad') as tmp:
+            fname = uploaded_file.name
+            suffix = '.h5ad' if fname.endswith('.h5ad') else '.h5'
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                 tmp.write(uploaded_file.getvalue())
                 tmp_path = tmp.name
 
-            # Load with scanpy
-            adata = sc.read_h5ad(tmp_path)
+            if suffix == '.h5ad':
+                adata = sc.read_h5ad(tmp_path)
+            else:
+                # Raw 10x HDF5 (filtered_feature_bc_matrix.h5)
+                adata = sc.read_10x_h5(tmp_path)
+                sc.pp.var_names_make_unique(adata)
 
             st.success(f"✓ Loaded: {adata.n_obs:,} spots, {adata.n_vars:,} genes")
-
-            # Clean up
             Path(tmp_path).unlink()
-
             return adata
 
         except Exception as e:
@@ -282,20 +285,13 @@ def generate_report(adata, features, use_multimodal):
                 report, metadata = generate_multimodal_report(
                     adata,
                     features,
-                    device='cpu'  # Use CPU for demo
+                    device='cpu',
                 )
             else:
-                # Text-only using prompt
-                prompt = create_anti_parroting_prompt(features)
-                report = "[DEMO MODE] Report generation requires MedGemma model.\n\n"
-                report += f"Prompt created successfully ({len(prompt)} chars).\n\n"
-                report += "In production, this would generate a 200-word clinical pathology report "
-                report += "correlating spatial patterns with tissue morphology."
-
-                metadata = {
-                    'mode': 'demo',
-                    'prompt_length': len(prompt)
-                }
+                report, metadata = generate_textonly_fallback(
+                    features,
+                    device='cpu',
+                )
 
             elapsed = time.time() - start_time
 
@@ -347,9 +343,9 @@ def main():
     st.header("📁 Upload Data")
 
     uploaded_file = st.file_uploader(
-        "Upload Visium HD H5AD file",
-        type=['h5ad'],
-        help="Spatial transcriptomics data in AnnData H5AD format"
+        "Upload Visium H5AD or 10x HDF5 file",
+        type=['h5ad', 'h5'],
+        help="AnnData H5AD or 10x Genomics filtered_feature_bc_matrix.h5"
     )
 
     if uploaded_file is None:

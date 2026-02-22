@@ -318,15 +318,15 @@ def load_medgemma_model(device="cpu", dtype=torch.float32):
     """Load MedGemma with device auto-detection."""
     load_dotenv()
 
-    if not os.environ.get('HF_TOKEN'):
-        raise ValueError("HF_TOKEN not found in .env file")
+    # HF_TOKEN read from environment — set as Space secret in HF Spaces UI
+    hf_token = os.environ.get('HF_TOKEN')
 
     model_id = "google/medgemma-4b-it"
     print(f"Loading MedGemma on {device} with {dtype}...")
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_id,
-        token=os.environ.get('HF_TOKEN')
+        token=hf_token
     )
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -334,7 +334,7 @@ def load_medgemma_model(device="cpu", dtype=torch.float32):
         torch_dtype=dtype,
         device_map=device,
         trust_remote_code=True,
-        token=os.environ.get('HF_TOKEN'),
+        token=hf_token,
         low_cpu_mem_usage=True
     )
 
