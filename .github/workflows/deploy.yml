@@ -19,11 +19,12 @@ jobs:
         HF_TOKEN: ${{ secrets.HF_TOKEN }}
         HF_USERNAME: ${{ secrets.HF_USERNAME }}
       run: |
-        # Build a clean deploy tree: app/ + src/ only (no large notebooks)
-        mkdir -p /tmp/hf-deploy
+        # Build a clean deploy tree: app/ + src/ + markers (no large notebooks)
+        mkdir -p /tmp/hf-deploy /tmp/hf-deploy/data
         cp -r app/. /tmp/hf-deploy/
         cp -r src /tmp/hf-deploy/src
         cp -r .streamlit /tmp/hf-deploy/.streamlit
+        cp data/PanglaoDB_markers_27_Mar_2020.tsv /tmp/hf-deploy/data/
 
         # Write HF Spaces README with required YAML frontmatter
         cat > /tmp/hf-deploy/README.md << 'READMEEOF'
@@ -65,6 +66,7 @@ jobs:
 
         COPY --chown=medgemma:medgemma src/ /app/src/
         COPY --chown=medgemma:medgemma streamlit_app.py /app/
+        COPY --chown=medgemma:medgemma data/ /app/data/
 
         USER medgemma
         ENV PATH=/home/medgemma/.local/bin:$PATH PYTHONPATH=/app:$PYTHONPATH
