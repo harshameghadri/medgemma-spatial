@@ -185,3 +185,10 @@ vercel/.vercel/
 
 # Dead code (moved out of active tree)
 deadcode/
+
+# Analysis and temp scripts
+CRITICAL_ANALYSIS.md
+extract_nb_text.py
+notebook_summaries.txt
+outputs_summary.txt
+refactor_*.py
