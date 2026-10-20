@@ -12,8 +12,8 @@ tags = ["huggingface", "api-token"]
 [[rules]]
 id = "kaggle-token"
 description = "Kaggle API Key"
-regex = '''[a-z0-9]{32}'''
-paths = ["kaggle.json", ".kaggle/kaggle.json"]
+regex = '''"key"\s*:\s*"[a-f0-9]{32}"'''
+path = '''(^|/)kaggle\.json$'''
 tags = ["kaggle", "api-token"]
 
 [allowlist]
@@ -24,7 +24,5 @@ regexes = [
     "hf_xxxxxxxxxx",
 ]
 paths = [
-    ".env",
-    ".env.example",
-    "*.example",
+    '''\.example$''',
 ]

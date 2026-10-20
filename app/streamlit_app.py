@@ -18,9 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import scanpy as sc
-    import pandas as pd
     import plotly.express as px
-    import plotly.graph_objects as go
     from src.streamlit_adapter import (
         annotate_spatial_regions,
         calculate_spatial_heterogeneity
@@ -29,7 +27,6 @@ try:
         generate_multimodal_report,
         generate_textonly_fallback
     )
-    from src.report_generation.prompt_builder import create_anti_parroting_prompt
 except ImportError as e:
     st.error(f"Missing dependencies: {e}")
     st.stop()

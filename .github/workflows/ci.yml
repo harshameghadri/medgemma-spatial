@@ -1,55 +1,120 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
-    branches: [ "main", "master", "devel" ]
+    branches: [main, devel]
   pull_request:
-    branches: [ "main", "master", "devel" ]
+    branches: [main, devel]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
-  validate-notebooks:
+  lint:
+    name: Lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
-        
-    - name: Install Linting Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install nbqa black flake8 isort
-        
-    - name: Check Notebook Formatting (Black)
-      run: |
-        echo "Running Black formatting check on Jupyter Notebooks..."
-        nbqa black notebooks/ --check || echo "Note: Found formatting issues in notebooks, but allowing CI to pass for Kaggle."
-        
-    - name: Check Source Code (Flake8)
-      run: |
-        echo "Linting src/ directory..."
-        flake8 src/ --count --select=E9,F63,F7,F82 --show-source --statistics || true
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check src app scripts tests
 
-  build-and-test:
-    needs: validate-notebooks
+  secrets:
+    name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.28.0/gitleaks_8.28.0_linux_x64.tar.gz \
+            | tar -xz gitleaks
+      - name: Scan full history
+        run: ./gitleaks git --config .gitleaks.toml --redact --verbose .
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
+  test:
+    name: Tests (py${{ matrix.python-version }}, ${{ matrix.deps }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The lock that Docker ships.
+          - python-version: "3.12"
+            deps: requirements.txt
+          # Unlocked ranges, to catch upstream breakage early.
+          - python-version: "3.11"
+            deps: requirements.in
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            ${{ matrix.deps }}
+            requirements-dev.txt
+      - name: Install runtime + dev dependencies
+        run: >-
+          pip install -r ${{ matrix.deps }} -r requirements-dev.txt
+          --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Dependency consistency
+        run: pip check
+      - name: Run tests
+        run: pytest -v
 
-    - name: Install Core Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        
-    - name: Verify Dependencies
-      run: |
-        python -c "import scanpy; import torch; import transformers; print('Dependencies validated successfully.')" || echo "Some test dependencies might be missing in CI environment, which is expected."
+  audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Audit locked requirements
+        run: pip-audit -r requirements.txt --disable-pip --no-deps --progress-spinner off
+
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: app/Dockerfile
+          push: false
+          load: true
+          tags: medgemma-spatial:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Container smoke test
+        run: |
+          docker run -d --name app -p 8501:8501 medgemma-spatial:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8501/_stcore/health; then echo; break; fi
+            sleep 2
+          done
+          docker exec app python -c "import src.streamlit_adapter, transformers.models.gemma3"
+          curl -fsS http://localhost:8501/_stcore/health
+          docker logs app

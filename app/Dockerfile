@@ -1,71 +1,44 @@
-# MedGemma Spatial Transcriptomics - Production Dockerfile
-# Multi-stage build for efficient image size
+# MedGemma Spatial Transcriptomics - production image.
+# Build from the repository root:  docker build -f app/Dockerfile .
+# The same file is used by CI and by the HuggingFace Spaces deploy.
 
-# Stage 1: Base dependencies
-FROM python:3.10-slim as base
+FROM python:3.12-slim AS base
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Stage 2: Python dependencies
-FROM base as builder
+FROM base AS builder
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --prefix=/install -r /tmp/requirements.txt
 
-WORKDIR /tmp
-
-# Copy requirements
-COPY app/requirements.txt /tmp/requirements.txt
-
-# Install Python packages
-RUN pip install --user -r requirements.txt
-
-# Stage 3: Runtime
 FROM base
+RUN useradd -m -u 1000 medgemma
+COPY --from=builder /install /usr/local
 
-# Create non-root user for security
-RUN useradd -m -u 1000 medgemma && \
-    mkdir -p /app /data /output && \
-    chown -R medgemma:medgemma /app /data /output
-
-# Copy installed packages from builder
-COPY --from=builder /root/.local /home/medgemma/.local
-
-# Set working directory
 WORKDIR /app
-
-# Copy application code
 COPY --chown=medgemma:medgemma src/ /app/src/
-COPY --chown=medgemma:medgemma notebooks/ /app/notebooks/
-COPY --chown=medgemma:medgemma app/streamlit_app.py /app/
+COPY --chown=medgemma:medgemma app/streamlit_app.py /app/streamlit_app.py
+COPY --chown=medgemma:medgemma .streamlit/ /app/.streamlit/
 COPY --chown=medgemma:medgemma data/PanglaoDB_markers_27_Mar_2020.tsv /app/data/
 
-# Switch to non-root user
 USER medgemma
+ENV HOME=/home/medgemma \
+    PYTHONPATH=/app \
+    HF_HOME=/home/medgemma/.cache/huggingface
 
-# Add local packages to PATH
-ENV PATH=/home/medgemma/.local/bin:$PATH \
-    PYTHONPATH=/app:$PYTHONPATH
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
-
-# Expose Streamlit port
 EXPOSE 8501
-
-# Run Streamlit app
 CMD ["streamlit", "run", "streamlit_app.py", \
      "--server.port=8501", \
      "--server.address=0.0.0.0", \
      "--server.headless=true", \
      "--server.fileWatcherType=none", \
-     "--browser.gatherUsageStats=false"]
+     "--browser.gatherUsageStats=false", \
+     "--server.maxUploadSize=1024"]

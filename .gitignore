@@ -103,7 +103,6 @@ temp/
 *.cache
 
 # Docker
-.dockerignore
 docker-compose.override.yml
 
 # Secrets (CRITICAL - NEVER COMMIT)
