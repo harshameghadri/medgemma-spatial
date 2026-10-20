@@ -12,5 +12,6 @@
     "harshameghadri/medgemma-spatial-data"
   ],
   "competition_sources": [],
-  "kernel_sources": []
+  "kernel_sources": [],
+  "machine_shape": "NvidiaTeslaT4"
 }
