@@ -29,6 +29,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 from generate_training_data import build_example_list, build_user_prompt  # noqa: E402
 from src.report_generation.medgemma_multimodal import SYSTEM_PROMPT  # noqa: E402
+from src.report_generation.faithfulness import SECTIONS, scrub_report  # noqa: E402
 from src.report_generation.prompt_builder import generate_medgemma_prompt  # noqa: E402
 
 USER_TAG = "<start_of_turn>user\n"
@@ -47,15 +48,20 @@ def split_chatml(text: str):
     return user, completion.strip()
 
 
-def to_prompt_completion(features: dict, completion: str, pattern: str) -> dict:
-    """Serving-identical prompt plus the stored completion."""
+def to_prompt_completion(features: dict, completion: str, pattern: str, scrub: bool = False) -> dict:
+    """Serving-identical prompt plus the stored completion (optionally scrubbed of ungrounded sentences)."""
+    user = generate_medgemma_prompt(features)
+    removed = []
+    if scrub:
+        completion, removed = scrub_report(completion, user)
     return {
         "prompt": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": generate_medgemma_prompt(features)},
+            {"role": "user", "content": user},
         ],
         "completion": [{"role": "assistant", "content": completion}],
         "pattern": pattern,
+        "removed": removed,
     }
 
 
@@ -79,7 +85,7 @@ def features_match(a, b, rel_tol: float = 1e-9) -> bool:
     return a == b
 
 
-def rebuild(records: list, seed: int = 42) -> list:
+def rebuild(records: list, seed: int = 42, scrub: bool = False) -> list:
     """Parse each stored prompt's features, cross-check them against the seeded
     generator (which also recovers the pattern label), and re-render."""
     examples = build_example_list(len(records), seed=seed)
@@ -94,8 +100,14 @@ def rebuild(records: list, seed: int = 42) -> list:
             )
         if user.replace(json.dumps(stored, indent=2), "") != build_user_prompt({}).replace("{}", ""):
             raise ValueError(f"Record {i}: prompt template differs from build_user_prompt")
-        out.append(to_prompt_completion(stored, completion, pattern))
+        out.append(to_prompt_completion(stored, completion, pattern, scrub=scrub))
     return out
+
+
+def usable(row: dict, min_words: int, min_sections: int) -> bool:
+    """A scrubbed target still long enough and covering enough of SECTIONS to train on."""
+    text = row["completion"][0]["content"]
+    return len(text.split()) >= min_words and sum(f"**{s}**" in text for s in SECTIONS) >= min_sections
 
 
 def read_jsonl(path: Path) -> list:
@@ -114,17 +126,25 @@ def main():
     parser.add_argument("--in-dir", type=Path, default=REPO / "data/lora_training")
     parser.add_argument("--out-dir", type=Path, default=REPO / "data/lora_training_v2")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--no-scrub", action="store_true",
+                        help="keep completions verbatim (default drops ungrounded sentences)")
+    parser.add_argument("--min-words", type=int, default=150)
+    parser.add_argument("--min-sections", type=int, default=3)
     args = parser.parse_args()
 
     train = read_jsonl(args.in_dir / "train.jsonl")
     evals = read_jsonl(args.in_dir / "eval.jsonl")
-    rows = rebuild(train + evals, seed=args.seed)
+    rows = rebuild(train + evals, seed=args.seed, scrub=not args.no_scrub)
+    splits = {"train": rows[: len(train)], "eval": rows[len(train):]}
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
-    write_jsonl(args.out_dir / "train.jsonl", rows[: len(train)])
-    write_jsonl(args.out_dir / "eval.jsonl", rows[len(train):])
-    print(f"Verified {len(rows)} records against seed {args.seed}; wrote "
-          f"{len(train)} train / {len(evals)} eval to {args.out_dir}")
+    for name, split in splits.items():
+        kept = [r for r in split if args.no_scrub or usable(r, args.min_words, args.min_sections)]
+        write_jsonl(args.out_dir / f"{name}.jsonl", kept)
+        print(f"{name}: kept {len(kept)}/{len(split)}")
+    n_removed = sum(len(r["removed"]) for r in rows)
+    print(f"Verified {len(rows)} records against seed {args.seed}; removed {n_removed} "
+          f"ungrounded sentences; wrote to {args.out_dir}")
 
 
 if __name__ == "__main__":

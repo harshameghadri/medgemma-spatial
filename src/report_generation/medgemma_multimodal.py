@@ -245,11 +245,12 @@ def generate_multimodal_report(
 ) -> Tuple[str, Dict]:
     """Report from the H&E image in adata.uns['spatial'] plus spatial features."""
     image = preprocess_for_medgemma(load_hires_image_from_adata(adata, library_id=library_id))
+    prompt = create_multimodal_prompt(features)
     messages = [
         _system_message(),
         {"role": "user", "content": [
             {"type": "image", "image": image},
-            {"type": "text", "text": create_multimodal_prompt(features)},
+            {"type": "text", "text": prompt},
         ]},
     ]
     report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
@@ -260,6 +261,7 @@ def generate_multimodal_report(
         "device": pick_device(device),
         "image_size": list(image.size),
         "report_length": len(report),
+        "prompt": prompt,
     }
     return report, metadata
 
@@ -274,9 +276,10 @@ def generate_textonly_fallback(
     """Report from spatial features only, using the same prompt the LoRA adapter trains on."""
     from src.report_generation.prompt_builder import generate_medgemma_prompt
 
+    prompt = generate_medgemma_prompt(features)
     messages = [
         _system_message(),
-        {"role": "user", "content": [{"type": "text", "text": generate_medgemma_prompt(features)}]},
+        {"role": "user", "content": [{"type": "text", "text": prompt}]},
     ]
     report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
     metadata = {
@@ -285,5 +288,6 @@ def generate_textonly_fallback(
         "adapter_id": adapter_id or os.environ.get("MEDGEMMA_ADAPTER"),
         "device": pick_device(device),
         "report_length": len(report),
+        "prompt": prompt,
     }
     return report, metadata
