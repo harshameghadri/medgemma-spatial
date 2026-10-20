@@ -7,13 +7,83 @@ data regurgitation from the spatial analysis pipeline.
 
 import json
 import os
-from typing import Dict
+import re
+from typing import Dict, Optional
+
+IMMUNE_TERMS = (
+    't cell', 'b cell', 'nk cell', 'ilc', 'macrophage', 'monocyte', 'plasma',
+    'dendritic', 'dc', 'neutrophil', 'mast', 'granulocyte', 'lymphocyte',
+    'treg', 'tcm', 'tem', 'mait', 'pdc', 'immune',
+)
+STROMAL_TERMS = ('stromal', 'caf', 'fibroblast', 'myofibroblast', 'pericyte')
+
+
+def _normalise_label(label: str) -> str:
+    """Lowercase, treat _ and - as spaces, singularise trailing 's' per word."""
+    words = re.split(r'[\s_\-/+]+', str(label).lower())
+    return ' '.join(w[:-1] if len(w) > 3 and w.endswith('s') else w for w in words if w)
+
+
+def is_immune_label(label: str) -> bool:
+    """True for immune cell-type labels from marker panels or CellTypist."""
+    norm = f' {_normalise_label(label)} '
+    return any(f' {term} ' in norm for term in IMMUNE_TERMS)
+
+
+def is_stromal_label(label: str) -> bool:
+    """True for stromal / fibroblast labels."""
+    norm = _normalise_label(label)
+    return any(term in norm for term in STROMAL_TERMS)
+
+
+def summarise_composition(features: Dict) -> Dict:
+    """Derive composition summary shared by every prompt template."""
+    annotation = features.get('annotation', {})
+    cell_types = annotation.get('cell_type_counts') or annotation.get('cluster_distribution') or {}
+    n_spots = sum(cell_types.values()) if cell_types else annotation.get('n_spots', 0)
+    denom = max(n_spots, 1)
+    major = {k: v for k, v in cell_types.items() if v / denom > 0.10 and k != 'Unknown'}
+    immune = {k: v for k, v in cell_types.items() if is_immune_label(k)}
+    return {
+        'n_spots': n_spots,
+        'major_populations': major,
+        'immune_cells': immune,
+        'immune_fraction': sum(immune.values()) / denom,
+        'stromal_major': any(is_stromal_label(k) for k in major),
+    }
+
+
+def _metric(features: Dict, section: str, key: str) -> Optional[float]:
+    """Return a numeric feature or None when it is missing or failed."""
+    value = features.get(section, {}).get(key)
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def _fmt(value: Optional[float], spec: str = '.2f') -> str:
+    return 'not available' if value is None else format(value, spec)
 
 
 def load_features_json(json_path: str) -> Dict:
     """Load spatial features JSON from disk."""
     with open(json_path, 'r') as f:
         return json.load(f)
+
+
+def classify_phenotype(comp: Dict, morans_i: Optional[float], entropy: Optional[float]) -> str:
+    """Coarse immune/stromal phenotype label used to orient the report."""
+    if comp['n_spots'] == 0:
+        return "undetermined (no cell-type annotation available)"
+    if comp['immune_fraction'] > 0.25 and (morans_i or 0) > 0.4:
+        return "hot immune-infiltrated (high immune density + strong spatial clustering)"
+    if comp['immune_fraction'] > 0.25:
+        return "immune-rich (high immune density)"
+    if comp['immune_fraction'] < 0.05:
+        return "cold immune desert (minimal immune infiltration)"
+    if morans_i is not None and entropy is not None and morans_i < 0.2 and entropy > 1.2:
+        return "heterogeneous / poorly organised"
+    if comp['stromal_major']:
+        return "stromal-rich / potentially fibrotic"
+    return "mixed compartment (epithelial-immune interface)"
 
 
 def generate_medgemma_prompt(features: Dict, moa_focus: bool = True) -> str:
@@ -26,44 +96,23 @@ def generate_medgemma_prompt(features: Dict, moa_focus: bool = True) -> str:
                    and therapeutic strategy — used with the fine-tuned LoRA adapter.
                    When False, uses the original concise synthesis prompt.
     """
-    annotation = features.get('annotation', {})
-    cell_types = (
-        annotation.get('cell_type_counts') or
-        annotation.get('cluster_distribution') or
-        {}
-    )
-    n_spots = sum(cell_types.values()) if cell_types else annotation.get('n_spots', 1)
-
-    major_populations = {k: v for k, v in cell_types.items()
-                         if v / max(n_spots, 1) > 0.10 and k != 'Unknown'}
-
-    immune_cells = {k: v for k, v in cell_types.items()
-                    if any(term in k.lower() for term in
-                           ['t cells', 'b cells', 'nk cells', 'macrophage',
-                            'plasma cells', 'dendritic', 'neutrophil'])}
-
-    spatial = features.get('spatial_heterogeneity', {})
-    uncertainty = features.get('uncertainty', {})
-    morans_i = spatial.get('morans_i_mean', 0)
-    entropy = uncertainty.get('mean_prediction_entropy', 0)
-    has_spatial_heterogeneity = morans_i > 0.3
-    has_high_uncertainty = entropy > 1.5
-    n_enriched_pairs = spatial.get('n_enriched_pairs', 0)
+    comp = summarise_composition(features)
+    major_populations = comp['major_populations']
+    immune_cells = comp['immune_cells']
+    morans_i = _metric(features, 'spatial_heterogeneity', 'morans_i_mean')
+    entropy = _metric(features, 'spatial_heterogeneity', 'entropy_mean')
+    n_enriched_pairs = features.get('spatial_heterogeneity', {}).get('n_enriched_pairs')
+    has_spatial_heterogeneity = morans_i is not None and morans_i > 0.3
+    has_high_uncertainty = entropy is not None and entropy > 1.5
 
     if moa_focus:
         # Classify spatial phenotype to help model orient its MoA reasoning
-        immune_fraction = sum(immune_cells.values()) / max(n_spots, 1)
-        if immune_fraction > 0.25 and morans_i > 0.4:
-            phenotype_hint = "hot immune-infiltrated (high immune density + strong spatial clustering)"
-        elif immune_fraction < 0.05:
-            phenotype_hint = "cold immune desert (minimal immune infiltration)"
-        elif morans_i < 0.2 and entropy > 1.2:
-            phenotype_hint = "heterogeneous / poorly organised"
-        elif any('stromal' in k.lower() or 'caf' in k.lower() or 'fibroblast' in k.lower()
-                 for k in major_populations):
-            phenotype_hint = "stromal-rich / potentially fibrotic"
-        else:
-            phenotype_hint = "mixed compartment (epithelial-immune interface)"
+        phenotype_hint = classify_phenotype(comp, morans_i, entropy)
+        morans_desc = 'not available' if morans_i is None else (
+            'strong' if morans_i > 0.5 else 'moderate' if morans_i > 0.25 else 'weak')
+        entropy_desc = 'not available' if entropy is None else (
+            'high heterogeneity' if has_high_uncertainty else 'moderate' if entropy > 0.8
+            else 'low — organised structure')
 
         prompt = f"""You are an expert computational pathologist specializing in spatial transcriptomics and tumour immunology.
 
@@ -71,9 +120,9 @@ SPATIAL TRANSCRIPTOMICS DATA SUMMARY:
 - Tissue phenotype: {phenotype_hint}
 - Major compartments: {len(major_populations)} populations (>{10}% of tissue)
 - Immune diversity: {len(immune_cells)} distinct immune populations
-- Spatial autocorrelation (Moran's I): {'strong' if morans_i > 0.5 else 'moderate' if morans_i > 0.25 else 'weak'} ({morans_i:.2f})
-- Tissue entropy: {'high heterogeneity' if has_high_uncertainty else 'moderate' if entropy > 0.8 else 'low — organised structure'} ({entropy:.2f})
-- Spatially co-enriched cell pairs: {n_enriched_pairs}
+- Spatial autocorrelation (Moran's I): {morans_desc} ({_fmt(morans_i)})
+- Neighbourhood entropy: {entropy_desc} ({_fmt(entropy)})
+- Spatially co-enriched cell-type pairs: {'not available' if n_enriched_pairs is None else n_enriched_pairs}
 
 Generate a 280-320 word expert pathology report structured as follows:
 
@@ -130,15 +179,10 @@ def generate_medgemma_prompt_detailed(features: Dict) -> str:
 
     Uses structured questions to direct synthesis over enumeration.
     """
-    annotation = features.get('annotation', {})
-    cell_types = annotation.get('cell_type_counts', {})
-    spatial = features.get('spatial_heterogeneity', {})
-    uncertainty = features.get('uncertainty', {})
-
-    n_spots = sum(cell_types.values()) if cell_types else 1
-    major_populations = {k: v for k, v in cell_types.items() if v / max(n_spots, 1) > 0.10}
-    immune_types = {k: v for k, v in cell_types.items()
-                    if any(x in k.lower() for x in ['t cell', 'b cell', 'macrophage', 'nk cell', 'dendritic'])}
+    comp = summarise_composition(features)
+    n_spots = comp['n_spots']
+    major_populations = comp['major_populations']
+    immune_types = comp['immune_cells']
 
     prompt = f"""You are analyzing Visium HD spatial transcriptomics data from human tissue.
 
@@ -148,8 +192,8 @@ CELLULAR COMPOSITION:
 - Immune cell diversity: {len(immune_types)} distinct immune populations
 
 SPATIAL METRICS:
-- Moran's I (autocorrelation): {spatial.get('morans_i_mean', 'N/A')}
-- Spatial entropy: {uncertainty.get('mean_prediction_entropy', 'N/A')}
+- Moran's I (autocorrelation): {_fmt(_metric(features, 'spatial_heterogeneity', 'morans_i_mean'), '.3f')}
+- Neighbourhood entropy: {_fmt(_metric(features, 'spatial_heterogeneity', 'entropy_mean'), '.3f')}
 
 INTERPRETIVE QUESTIONS (answer in narrative form):
 
@@ -314,23 +358,13 @@ def generate_report_with_medgemma(features_json_path: str,
 
 def create_anti_parroting_prompt(features: Dict) -> str:
     """Create prompt that encourages synthesis, not regurgitation of raw data."""
-    annotation = features.get('annotation', {})
-    cell_types = (
-        annotation.get('cell_type_counts') or
-        annotation.get('cluster_distribution') or
-        {}
-    )
-    n_spots = sum(cell_types.values()) if cell_types else annotation.get('n_spots', 1)
-
-    major_populations = {k: v for k, v in cell_types.items()
-                        if v / max(n_spots, 1) > 0.10 and k != 'Unknown'}
-    immune_cells = {k: v for k, v in cell_types.items()
-                    if any(term in k.lower() for term in
-                          ['t cells', 'b cells', 'nk cells', 'macrophage',
-                           'plasma cells', 'dendritic', 'neutrophil'])}
-
-    has_spatial_heterogeneity = features.get('spatial_heterogeneity', {}).get('morans_i_mean', 0) > 0.3
-    has_high_uncertainty = features.get('uncertainty', {}).get('mean_prediction_entropy', 0) > 1.5
+    comp = summarise_composition(features)
+    major_populations = comp['major_populations']
+    immune_cells = comp['immune_cells']
+    morans_i = _metric(features, 'spatial_heterogeneity', 'morans_i_mean')
+    entropy = _metric(features, 'spatial_heterogeneity', 'entropy_mean')
+    has_spatial_heterogeneity = morans_i is not None and morans_i > 0.3
+    has_high_uncertainty = entropy is not None and entropy > 1.5
 
     return f"""You are a computational pathologist analyzing Visium HD spatial transcriptomics data from human tissue.
 

@@ -21,7 +21,8 @@ try:
     import plotly.express as px
     from src.streamlit_adapter import (
         annotate_spatial_regions,
-        calculate_spatial_heterogeneity
+        build_features,
+        calculate_spatial_heterogeneity,
     )
     from src.report_generation.medgemma_multimodal import (
         generate_multimodal_report,
@@ -184,17 +185,12 @@ def run_spatial_analysis(adata, use_markers, resolution):
         # Step 3: Extract features
         status_text.text("Step 3/3: Extracting features...")
 
-        features = {
-            'annotation': annot_metrics,
-            'spatial_heterogeneity': spatial_metrics,
-            'uncertainty': {
-                'mean_prediction_entropy': float(adata.obs['prediction_entropy'].mean())
-                    if 'prediction_entropy' in adata.obs.columns else 1.0
-            }
-        }
+        features = build_features(adata, annot_metrics, spatial_metrics)
 
         progress_bar.progress(100)
         status_text.text("✓ Analysis complete!")
+        for msg in features['errors']:
+            st.warning(msg)
 
         return adata, features, True
 
