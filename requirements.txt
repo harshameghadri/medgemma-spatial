@@ -22,7 +22,7 @@ aiosignal==1.4.0
     # via aiohttp
 altair==6.2.2
     # via streamlit
-anndata==0.11.3
+anndata==0.12.19
     # via
     #   -r requirements.in
     #   annsel
@@ -60,6 +60,7 @@ certifi==2026.10.19
     #   pyogrio
     #   pyproj
     #   requests
+    #   scanpy
 charset-normalizer==3.5.2
     # via requests
 click==8.5.0
@@ -113,7 +114,9 @@ donfig==0.8.1.post1
 et-xmlfile==2.0.0
     # via openpyxl
 fast-array-utils==1.5.1
-    # via squidpy
+    # via
+    #   scanpy
+    #   squidpy
 filelock==4.1.0
     # via
     #   huggingface-hub
@@ -205,7 +208,9 @@ kiwisolver==1.5.1
 lazy-loader==0.6
     # via scikit-image
 legacy-api-wrap==1.5
-    # via scanpy
+    # via
+    #   anndata
+    #   scanpy
 leidenalg==0.12.0
     # via celltypist
 llvmlite==0.50.0
@@ -274,6 +279,7 @@ networkx==3.4.2
 numba==0.68.0
     # via
     #   datashader
+    #   fast-array-utils
     #   pynndescent
     #   scanpy
     #   spatialdata
@@ -499,7 +505,7 @@ safetensors==0.8.0
     # via
     #   accelerate
     #   transformers
-scanpy==1.11.5
+scanpy==1.12.4
     # via
     #   -r requirements.in
     #   celltypist
@@ -525,6 +531,7 @@ scipy==1.15.3
     #   anndata
     #   dask-image
     #   datashader
+    #   fast-array-utils
     #   formulaic
     #   pynndescent
     #   scanpy
@@ -533,12 +540,17 @@ scipy==1.15.3
     #   spatialdata
     #   statsmodels
     #   umap-learn
+scverse-misc==0.1.7
+    # via
+    #   anndata
+    #   scanpy
 seaborn==0.13.2
     # via scanpy
 session-info2==0.4.1
     # via
     #   annsel
     #   scanpy
+    #   scverse-misc
 setuptools==84.2.0
     # via
     #   -r requirements.in
@@ -645,6 +657,7 @@ typing-extensions==4.16.0
     #   pydantic-core
     #   referencing
     #   scanpy
+    #   scverse-misc
     #   spatialdata
     #   starlette
     #   streamlit
@@ -702,6 +715,7 @@ yarl==1.25.1
     # via aiohttp
 zarr==3.4.1
     # via
+    #   anndata
     #   multiscale-spatial-image
     #   ome-zarr
     #   ome-zarr-models
