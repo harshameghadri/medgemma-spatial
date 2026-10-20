@@ -64,9 +64,17 @@ def safe_json(obj):
     return _clean(obj)
 
 
+DISCLAIMER = (
+    "**Research use only.** Not a medical device. Generated text is a draft "
+    "interpretation of computed features and must not be used for diagnosis "
+    "or treatment decisions."
+)
+
+
 def create_header():
     """Create app header with branding."""
     st.title("🔬 MedGemma Spatial Transcriptomics")
+    st.warning(DISCLAIMER)
     st.markdown("""
     **AI-powered spatial transcriptomics analysis and pathology report generation**
 
@@ -266,63 +274,63 @@ def visualize_spatial_data(adata):
             st.metric("Clusters", "N/A")
 
 
-def generate_report(adata, features, use_multimodal):
-    """Generate MedGemma report."""
-    st.header("📝 Pathology Report")
-
-    with st.spinner("Generating report with MedGemma..."):
+def _run_model(adata, features, use_multimodal):
+    """Call MedGemma; multimodal falls back to text-only when no H&E image is present."""
+    if use_multimodal:
         try:
-            start_time = time.time()
+            return generate_multimodal_report(adata, features)
+        except KeyError as e:
+            st.info(f"No H&E image available ({e}); using text-only mode.")
+    return generate_textonly_fallback(features)
 
-            if use_multimodal:
-                report, metadata = generate_multimodal_report(
-                    adata,
-                    features,
-                    device='cpu',
-                )
-            else:
-                report, metadata = generate_textonly_fallback(
-                    features,
-                    device='cpu',
-                )
 
-            elapsed = time.time() - start_time
+def generate_report(adata, features, use_multimodal):
+    """Generate the MedGemma report on demand and keep it across reruns."""
+    st.header("📝 Pathology Report")
+    st.caption(DISCLAIMER)
 
-            st.success(f"✓ Report generated in {elapsed:.1f}s")
+    if st.button("🧠 Generate report with MedGemma"):
+        with st.spinner("Loading MedGemma (first run downloads ~8.6 GB) and generating..."):
+            try:
+                start_time = time.time()
+                report, metadata = _run_model(adata, features, use_multimodal)
+                metadata['elapsed_s'] = round(time.time() - start_time, 1)
+                st.session_state['report'] = (report, metadata)
+            except Exception as e:
+                st.error(f"Report generation failed: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+                return False
 
-            # Display report
-            st.markdown("### Generated Report")
-            st.markdown(report)
+    if 'report' not in st.session_state:
+        return False
 
-            # Metadata
-            with st.expander("📋 Report Metadata"):
-                st.json(safe_json(metadata))
+    report, metadata = st.session_state['report']
+    st.success(f"✓ Report generated in {metadata.get('elapsed_s', 0):.1f}s")
+    st.markdown("### Generated Report")
+    st.markdown(report)
 
-            # Download button
-            sep = "=" * 80
-            dash = "-" * 80
-            report_text = (
-                f"MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT\n{sep}\n\n"
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Mode: {metadata.get('mode', 'unknown')}\n\n"
-                f"REPORT:\n{dash}\n{report}\n{sep}\n\n"
-                f"FEATURES:\n{json.dumps(features, indent=2, default=str)}\n"
-            )
+    with st.expander("📋 Report Metadata"):
+        st.json(safe_json(metadata))
 
-            st.download_button(
-                label="📥 Download Report (TXT)",
-                data=report_text,
-                file_name=f"medgemma_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
-            )
-
-            return True
-
-        except Exception as e:
-            st.error(f"Report generation failed: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-            return False
+    sep = "=" * 80
+    dash = "-" * 80
+    report_text = (
+        f"MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT\n{sep}\n\n"
+        f"RESEARCH USE ONLY - NOT FOR CLINICAL DECISION MAKING\n\n"
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Mode: {metadata.get('mode', 'unknown')}\n"
+        f"Model: {metadata.get('model_id')}  Adapter: {metadata.get('adapter_id')}\n\n"
+        f"REPORT:\n{dash}\n{report}\n{sep}\n\n"
+        f"FEATURES:\n{json.dumps(features, indent=2, default=str)}\n"
+    )
+    st.download_button(
+        label="📥 Download Report (TXT)",
+        data=report_text,
+        file_name=f"medgemma_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain"
+    )
+    return True
 
 
 def main():
@@ -377,9 +385,9 @@ def main():
             st.error("Analysis failed. Check errors above.")
             st.stop()
 
-        # Store in session state
         st.session_state['adata'] = adata
         st.session_state['features'] = features
+        st.session_state.pop('report', None)
 
     # Show results if available
     if 'adata' in st.session_state and 'features' in st.session_state:

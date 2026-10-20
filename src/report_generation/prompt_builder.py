@@ -130,7 +130,7 @@ Generate a 280-320 word expert pathology report structured as follows:
 
 2. MECHANISM OF ACTION (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism (e.g., TGF-β-mediated exclusion, IFN-γ/CXCL9 chemokine gradient, VEGF-driven angiogenic niche). Explain how spatial co-localisation or exclusion patterns support this mechanism.
 
-3. RESEARCH CONTEXT (1-2 sentences): Reference 1-2 published findings or clinical cohort studies that corroborate this pattern (cite author surname, journal, year).
+3. RESEARCH CONTEXT (1-2 sentences): Relate the pattern to established biology. Name a specific study only if you are certain of author, journal and year; never invent a reference.
 
 4. THERAPEUTIC IMPLICATIONS (2-3 sentences): Recommend a specific evidence-based therapeutic strategy or combination (name drug class or agent where possible). State the biological rationale for this approach.
 
