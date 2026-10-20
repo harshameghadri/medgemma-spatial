@@ -56,8 +56,8 @@ jobs:
           # The lock that Docker ships.
           - python-version: "3.12"
             deps: requirements.txt
-          # Unlocked ranges, to catch upstream breakage early.
-          - python-version: "3.11"
+          # Latest releases within requirements.in ranges, to catch upstream breakage early.
+          - python-version: "3.12"
             deps: requirements.in
     steps:
       - uses: actions/checkout@v4
