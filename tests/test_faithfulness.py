@@ -165,6 +165,15 @@ def test_review_strips_only_unconfirmed_citations():
     assert review_report(text, PROMPT, verify_citations=False)["clean_text"] == text
 
 
+def test_review_removes_ungrounded_cell_types_and_numbers():
+    text = ("**MECHANISM OF ACTION**\n\nCAFs exclude T cells via TGF-β. MDSCs suppress immunity. "
+            "Roughly 62% of spots are stromal. Moran's I of 0.56 supports compartments.")
+    review = review_report(text, PROMPT)
+    assert review["unsupported_cell_types"] == ["mdsc"] and review["unsupported_numbers"] == ["62%"]
+    assert review["clean_text"] == ("**MECHANISM OF ACTION**\n\nCAFs exclude T cells via TGF-β. "
+                                    "Moran's I of 0.56 supports compartments.")
+
+
 def test_strip_unverified_noop_without_bad_citations():
     assert strip_unverified("A. B.", [{"status": "verified", "text": "x"}]) == "A. B."
 
@@ -172,13 +181,13 @@ def test_strip_unverified_noop_without_bad_citations():
 @pytest.mark.network
 def test_live_pubmed_distinguishes_real_and_miscited_papers():
     checker = PubMedChecker()
-    real = checker.verify("Helmink", 2020, "Nature")
-    if real["status"] == "unchecked":
-        pytest.skip(f"PubMed unreachable: {real['error']}")
-    assert real["status"] == "verified" and real["pmid"] == "31942075"
-    assert checker.verify("Helmink", 2020, "Nature Medicine")["status"] == "mismatch"
-    assert checker.verify("Kieffer", 2020, "Cancer Discovery")["status"] == "verified"
-    assert checker.verify("Kieffer", 2020, "Cancer Cell")["status"] == "mismatch"
+    cases = {("Helmink", 2020, "Nature"): "verified", ("Helmink", 2020, "Nature Medicine"): "mismatch",
+             ("Kieffer", 2020, "Cancer Discovery"): "verified", ("Kieffer", 2020, "Cancer Cell"): "mismatch"}
+    got = {case: checker.verify(*case) for case in cases}
+    if any(r["status"] == "unchecked" for r in got.values()):
+        pytest.skip("PubMed unreachable or rate limited")
+    assert {case: r["status"] for case, r in got.items()} == cases
+    assert got[("Helmink", 2020, "Nature")]["pmid"] == "31942075"
 
 
 def test_pubmed_retries_rate_limit(monkeypatch):
@@ -195,3 +204,17 @@ def test_pubmed_retries_rate_limit(monkeypatch):
     monkeypatch.setattr("time.sleep", lambda s: None)
     checker = PubMedChecker(fetch=flaky)
     assert checker.verify("Helmink", 2020, "Nature")["status"] == "verified"
+
+
+def test_multimodal_prompt_grounds_listed_cell_types():
+    from src.report_generation.medgemma_multimodal import create_multimodal_prompt
+
+    prompt = create_multimodal_prompt(FEATURES)
+    text = "**TISSUE MICROENVIRONMENT**\n\nT cells and macrophages border CAF-rich stroma around epithelial nests."
+    review = review_report(text, prompt, verify_citations=False)
+    assert review["unsupported_cell_types"] == [] and review["clean_text"] == text
+
+
+def test_section_emptied_by_guard_loses_its_heading():
+    text = "**MECHANISM OF ACTION**\n\nMDSCs suppress immunity.\n\n**VALIDATION CAVEATS**\n\nConfirm with IHC."
+    assert review_report(text, PROMPT)["clean_text"] == "**VALIDATION CAVEATS**\n\nConfirm with IHC."

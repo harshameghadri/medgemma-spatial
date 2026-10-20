@@ -11,6 +11,7 @@ not_found | incomplete (no journal given, cannot verify) | unchecked.
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -19,7 +20,14 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
-from src.report_generation.faithfulness import extract_citations, score_report, split_sentences
+from src.report_generation.faithfulness import (
+    HEADING,
+    extract_citations,
+    score_report,
+    split_sentences,
+    unsupported_cell_types,
+    unsupported_numbers,
+)
 
 EUTILS = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
 TOOL = "medgemma-spatial"
@@ -130,19 +138,47 @@ def strip_unverified(text: str, results: List[dict]) -> str:
     return "\n".join(out)
 
 
+def strip_ungrounded(text: str, prompt: str) -> str:
+    """Remove sentences stating numbers or cell types that the prompt did not provide."""
+    out = []
+    for para in text.split("\n"):
+        if not para.strip():
+            out.append("")
+            continue
+        kept = [s for s in split_sentences(para)
+                if not unsupported_numbers(s, prompt) and not unsupported_cell_types(s, prompt)]
+        out.append(" ".join(kept))
+    return _drop_empty_headings("\n".join(out))
+
+
+def _drop_empty_headings(text: str) -> str:
+    """Remove a bold heading line whose section has no text left."""
+    lines = text.split("\n")
+    keep = []
+    for i, line in enumerate(lines):
+        if HEADING.match(line):
+            nxt = next((x for x in lines[i + 1:] if x.strip()), None)
+            if nxt is None or HEADING.match(nxt):
+                continue
+        keep.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(keep)).strip()
+
+
 def review_report(text: str, prompt: str, verify_citations: bool = True,
                   checker: Optional[PubMedChecker] = None) -> dict:
     """Grounding review shown next to a generated report.
 
-    Returns the score, PubMed results and ``clean_text`` with sentences citing
-    unconfirmed papers removed. With ``verify_citations=False`` (or offline)
-    citations are left in place and reported as unchecked.
+    Returns the score, PubMed results and ``clean_text``: the report without
+    sentences that state numbers or cell types absent from the prompt, or cite
+    papers PubMed could not confirm. With ``verify_citations=False`` (or
+    offline) citations are left in place and reported as unchecked.
     """
     score = score_report(text, prompt)
+    grounded = strip_ungrounded(text, prompt) if prompt else text
     if not score["citations"]:
-        return {**score, "pubmed": [], "clean_text": text}
+        return {**score, "pubmed": [], "clean_text": grounded}
     if not verify_citations:
         results = [{**c, "status": "unchecked"} for c in extract_citations(text)]
     else:
         results = check_citations(text, checker)
-    return {**score, "pubmed": results, "clean_text": strip_unverified(text, results)}
+    return {**score, "pubmed": results, "clean_text": strip_unverified(grounded, results)}

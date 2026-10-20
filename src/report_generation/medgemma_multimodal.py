@@ -124,7 +124,7 @@ def create_multimodal_prompt(features: Dict) -> str:
     str
         Prompt for MedGemma multimodal input
     """
-    from src.report_generation.prompt_builder import _fmt, _metric, summarise_composition
+    from src.report_generation.prompt_builder import _fmt, _metric, cell_type_list, summarise_composition
 
     comp = summarise_composition(features)
     n_spots = comp['n_spots']
@@ -144,10 +144,12 @@ H&E IMAGE:
 
 MOLECULAR DATA:
 - Total tissue spots: {n_spots}
+- Cell types detected (most to least abundant): {cell_type_list(features)}
 - Major cell populations (>10% abundance): {len(major_populations)} types
 - Immune cell diversity: {len(immune_types)} distinct immune populations
 - Spatial organization: {'heterogeneous' if has_spatial_het else 'uniform'} (Moran's I = {_fmt(morans_i, '.3f')})
 - Annotation uncertainty (entropy): {_fmt(pred_entropy, '.3f')}
+- Annotation confidence: mean {_fmt(_metric(features, 'annotation', 'mean_confidence'))}
 
 TASK:
 Generate a 200-word clinical pathology report that:
@@ -158,6 +160,7 @@ Generate a 200-word clinical pathology report that:
 
 CRITICAL:
 - DO NOT repeat exact numbers from the data
+- Discuss only the cell types listed above; do not cite specific studies
 - SYNTHESIZE insights from both image and molecular data
 - Focus on biological interpretation, not data enumeration
 

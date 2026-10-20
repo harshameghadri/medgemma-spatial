@@ -290,9 +290,10 @@ def show_grounding_review(review, raw_report):
     st.markdown("### 🔎 Grounding check")
     issues = []
     if review['unsupported_numbers']:
-        issues.append(f"Numbers not present in the input: {', '.join(review['unsupported_numbers'])}")
+        issues.append("Numbers not present in the input (sentences removed): "
+                      + ", ".join(review['unsupported_numbers']))
     if review['unsupported_cell_types']:
-        issues.append("Cell types not detected in this sample: "
+        issues.append("Cell types not detected in this sample (sentences removed): "
                       + ", ".join(t.replace('_', ' ') for t in review['unsupported_cell_types']))
     for c in review['pubmed']:
         if c['status'] == 'verified':
@@ -306,7 +307,7 @@ def show_grounding_review(review, raw_report):
     if not issues and not review['pubmed']:
         st.info("No citations, and every number and cell type in the report appears in the input.")
     if review['clean_text'] != raw_report:
-        with st.expander("Original model output (before removing unconfirmed citations)"):
+        with st.expander("Original model output (before removing ungrounded sentences)"):
             st.markdown(raw_report)
 
 
