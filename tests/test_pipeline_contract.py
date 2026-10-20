@@ -127,3 +127,20 @@ def test_s7_nan_coordinates_reported():
     adata.obsm["spatial"][0, 0] = np.nan
     spatial = calculate_spatial_heterogeneity(adata)
     assert any("NaN" in e for e in spatial["errors"])
+
+
+def test_s6_scaled_hvg_input_uses_full_raw_matrix():
+    import scanpy as sc
+
+    adata = make_synthetic_tissue()
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
+    adata.raw = adata
+    sc.pp.highly_variable_genes(adata, n_top_genes=500)
+    adata = adata[:, adata.var["highly_variable"]].copy()
+    sc.pp.scale(adata)
+    out, metrics = annotate_spatial_regions(adata, use_celltypist=False)
+    assert metrics["n_genes"] == adata.raw.n_vars
+    assert metrics["errors"] == []
+    t_region = out.obs.loc[out.obs["is_t_region"], "cell_type"]
+    assert (t_region == "T_cells").mean() > 0.8

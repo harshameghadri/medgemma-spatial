@@ -76,8 +76,30 @@ def looks_like_raw_counts(X, n_sample: int = 20000) -> bool:
     return bool(np.all(values >= 0) and np.allclose(values, np.round(values)))
 
 
+def _has_negative(X) -> bool:
+    return bool((X.min() if sp.issparse(X) else np.min(X)) < 0)
+
+
+def restore_full_matrix(adata):
+    """Swap a scaled HVG-only X for the full matrix in adata.raw, keeping spot metadata."""
+    full = adata.raw.to_adata()
+    full.obs = adata.obs.copy()
+    for key in adata.obsm:
+        full.obsm[key] = adata.obsm[key]
+    for key in adata.obsp:
+        full.obsp[key] = adata.obsp[key]
+    full.uns = adata.uns
+    if 'highly_variable' in adata.var.columns:
+        full.var['highly_variable'] = full.var_names.isin(adata.var_names[adata.var['highly_variable']])
+    print(f"Using adata.raw ({full.n_vars} genes) instead of scaled X ({adata.n_vars} genes)")
+    return full
+
+
 def preprocess(adata, errors):
     """Normalise raw counts if needed and compute HVGs + PCA on a scaled HVG copy."""
+    if adata.raw is not None and _has_negative(adata.X) and adata.raw.n_vars >= adata.n_vars:
+        adata = restore_full_matrix(adata)
+
     if looks_like_raw_counts(adata.X):
         sc.pp.filter_cells(adata, min_genes=200)
         sc.pp.filter_genes(adata, min_cells=3)
@@ -93,8 +115,7 @@ def preprocess(adata, errors):
         sc.pp.log1p(adata)
         adata.layers['log1p_norm'] = adata.X.copy()
     elif 'log1p_norm' not in adata.layers:
-        x_min = adata.X.min() if sp.issparse(adata.X) else np.min(adata.X)
-        if x_min >= 0:
+        if not _has_negative(adata.X):
             adata.layers['log1p_norm'] = adata.X.copy()
         else:
             errors.append("Input X is scaled (negative values) and has no log1p layer; marker scoring may be unreliable")

@@ -34,6 +34,8 @@ half is T-cell-rich and right half epithelial (see `tests/conftest.py`).
 | S4 | P1 | `compute_multiscale_neighborhood_enrichment` never returns `n_significant_pairs`/`max_enrichment`, which the adapter reads → always `0`/`1.0`. It also overwrites `obsp['spatial_connectivities']` with the radius-3 graph, which spatial entropy then uses. | — |
 | S5 | P1 | Moran's I builds a dense `n×n` `np.outer` per gene per permutation (50 genes × 100 perms). Fine at 400 spots; infeasible for Visium HD bins. | `uncertainty_spatial_analysis.py` |
 | S6 | P1 | "Already preprocessed" heuristic `n_vars < 3000` sends raw counts to PCA/CellTypist for targeted panels. | CellTypist: `Invalid expression matrix … expect log1p normalized`. |
+| S6b | P1 | A typical processed upload (X = 2,000 scaled HVGs, full log-normalised matrix in `.raw`) was scored on the scaled HVGs only. Now restored from `.raw`. | Real breast Visium (`outputs/processed_visium.h5ad`, 4,895 spots): 2,000 → 21,351 genes used. |
+| S8 | P1 | **Open, not fixed: pan-tissue marker panels mislabel spots.** Per-gene z-score + argmax always picks a label, and sparse genes get large z-scores. On the breast sample, 230 spots are called `Hepatocyte` (ALB/HP/APOA1 are genuinely spatially enriched there) and 238 `Neuronal`; a 1.0 z threshold still leaves 151. This is a method limitation, so the fix is a design choice: tissue-aware panels, a reference-based deconvolution (cell2location / RCTD), or CellTypist on all spots with a tissue model. | Same sample. |
 | S7 | P1 | Every stage is wrapped in `except Exception: print(...); return zeros`. Failures are indistinguishable from biology. | — |
 
 ## 3. Inference / deployment
