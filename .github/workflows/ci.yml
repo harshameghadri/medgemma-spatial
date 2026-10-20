@@ -88,11 +88,15 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            requirements.in
             requirements-train.txt
             requirements-dev.txt
-      - name: Install runtime + training + dev dependencies
-        run: pip install -r requirements.txt -r requirements-train.txt -r requirements-dev.txt
+      # Resolved together (not against the runtime lock), as on Kaggle where the
+      # training pins are installed into an existing environment.
+      - name: Install runtime ranges + training pins + dev dependencies
+        run: >-
+          pip install -r requirements.in -r requirements-train.txt -r requirements-dev.txt
+          --extra-index-url https://download.pytorch.org/whl/cpu
       - name: Train 2 steps, check loss masking, load adapter for inference
         run: |
           set -o pipefail
