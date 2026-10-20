@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,6 +40,16 @@ def test_rebuild_uses_serving_prompt():
         assert row["pattern"] == pattern
         assert row["prompt"][-1]["content"] == generate_medgemma_prompt(feats)
         assert row["completion"] == [{"role": "assistant", "content": COMPLETION.strip()}]
+
+
+def test_rebuild_tolerates_last_ulp_float_differences():
+    records = legacy_records(3)
+    _, feats = build_example_list(3, seed=42)[2]
+    value = feats["spatial_heterogeneity"]["entropy_mean"]
+    nudged = float(np.nextafter(value, 0))
+    records[2]["text"] = records[2]["text"].replace(repr(value), repr(nudged))
+    rows = rebuild(records)
+    assert f"({nudged:.2f})" in rows[2]["prompt"][-1]["content"]
 
 
 def test_rebuild_rejects_records_not_from_seed():

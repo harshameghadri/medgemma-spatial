@@ -6,7 +6,7 @@ user turn, while the app prompts MedGemma with
 ``prompt_builder.generate_medgemma_prompt``. That train/serve skew means the
 adapter never sees the prompt it is used with. The features are deterministic
 (``build_example_list(n, seed)``), so they can be regenerated, verified against
-the stored prompt, and re-rendered in TRL prompt-completion format:
+the stored prompt (with float tolerance), and re-rendered in TRL prompt-completion format:
 
     {"prompt": [{"role": "system", ...}, {"role": "user", ...}],
      "completion": [{"role": "assistant", ...}],
@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -33,6 +34,8 @@ from src.report_generation.prompt_builder import generate_medgemma_prompt  # noq
 USER_TAG = "<start_of_turn>user\n"
 MODEL_TAG = "<start_of_turn>model\n"
 END_TAG = "<end_of_turn>"
+FEATURES_START = "SPATIAL FEATURES:\n"
+FEATURES_END = "\n\nGenerate a"
 
 
 def split_chatml(text: str):
@@ -56,18 +59,42 @@ def to_prompt_completion(features: dict, completion: str, pattern: str) -> dict:
     }
 
 
+def extract_features(user_prompt: str) -> dict:
+    """Parse the feature JSON embedded in an original training prompt."""
+    try:
+        body = user_prompt.split(FEATURES_START, 1)[1].split(FEATURES_END, 1)[0]
+    except IndexError as e:
+        raise ValueError("prompt does not contain a SPATIAL FEATURES block") from e
+    return json.loads(body)
+
+
+def features_match(a, b, rel_tol: float = 1e-9) -> bool:
+    """Structural equality with float tolerance (numpy RNG differs in the last ULP across builds)."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        return a.keys() == b.keys() and all(features_match(a[k], b[k], rel_tol) for k in a)
+    if isinstance(a, bool) or isinstance(b, bool):
+        return a == b
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return math.isclose(a, b, rel_tol=rel_tol, abs_tol=1e-12)
+    return a == b
+
+
 def rebuild(records: list, seed: int = 42) -> list:
-    """Regenerate features, verify they reproduce each stored prompt, re-render."""
+    """Parse each stored prompt's features, cross-check them against the seeded
+    generator (which also recovers the pattern label), and re-render."""
     examples = build_example_list(len(records), seed=seed)
     out = []
-    for i, ((pattern, features), record) in enumerate(zip(examples, records)):
+    for i, ((pattern, regenerated), record) in enumerate(zip(examples, records)):
         user, completion = split_chatml(record["text"])
-        if user != build_user_prompt(features):
+        stored = extract_features(user)
+        if not features_match(stored, regenerated):
             raise ValueError(
-                f"Record {i}: stored prompt does not match regenerated features "
-                f"(seed={seed}); the data was not produced by build_example_list"
+                f"Record {i}: stored features do not match build_example_list(seed={seed}); "
+                "the data was not produced by the seeded generator"
             )
-        out.append(to_prompt_completion(features, completion, pattern))
+        if user.replace(json.dumps(stored, indent=2), "") != build_user_prompt({}).replace("{}", ""):
+            raise ValueError(f"Record {i}: prompt template differs from build_user_prompt")
+        out.append(to_prompt_completion(stored, completion, pattern))
     return out
 
 
