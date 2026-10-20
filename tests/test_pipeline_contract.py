@@ -52,7 +52,7 @@ def test_s1_prompt_receives_nonzero_spatial_metrics(run):
     _, features = run
     spatial = features["spatial_heterogeneity"]
     prompt = generate_medgemma_prompt(features)
-    assert f"Moran's I): " in prompt and f"({spatial['morans_i_mean']:.2f})" in prompt
+    assert "Moran's I): " in prompt and f"({spatial['morans_i_mean']:.2f})" in prompt
     assert spatial["n_enriched_pairs"] >= 2
     assert f"co-enriched cell-type pairs: {spatial['n_enriched_pairs']}" in prompt
 
