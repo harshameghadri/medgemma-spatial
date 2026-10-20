@@ -18,6 +18,7 @@ wrong or the component cannot work; **P1** = will fail under realistic use;
 | L4 | P1 | Loss is computed over prompt + completion (no completion-only masking), so ~50% of the gradient is spent on a templated JSON dump. | `SFTTrainer(dataset_text_field="text")`, no assistant-only mask. |
 | L5 | P1 | Train/serve skew: training prompts are a raw `json.dumps(features, indent=2)`; serving prompts come from `prompt_builder.generate_medgemma_prompt`. The adapter is also never loaded by `src/` or `app/`. | `grep -rn PeftModel src app` → nothing. |
 | L6 | P1 | `scripts/train_lora.py` uses removed TRL arguments (`tokenizer=`, `max_seq_length=` in `SFTConfig`) and `transformers==4.45.1` (cannot load Gemma 3, see I1). | — |
+| L8 | P2 | Synthetic features are out of distribution for the real pipeline: the generator draws `n_enriched_pairs` up to 200, but with ~11 cell types there are at most 66 unordered pairs, and the cell-type vocabulary is fixed to 11 labels while the pipeline emits up to 20 panels plus CellTypist labels. | `generate_training_data.py` |
 | L7 | P2 | `max_steps=150 × grad_accum 8` on 206 examples ≈ 5.8 epochs of a tiny synthetic set — overfitting risk. Gemma 3 in fp16 on T4 (no bf16) is prone to NaN loss. | — |
 
 ## 2. Spatial pipeline → prompt data contract
