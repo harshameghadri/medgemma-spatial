@@ -179,6 +179,17 @@ def canonical_section(title: str):
     return ""
 
 
+def normalise_headings(text: str) -> str:
+    """Rewrite near-miss section headings (e.g. 'VALIDATION CAVES') to the canonical SECTIONS spelling."""
+    out = []
+    for line in text.split("\n"):
+        section, rest = _parse_line(line)
+        if section and section not in line:
+            line = f"**{section}**" + (f" {rest}" if rest else "")
+        out.append(line)
+    return "\n".join(out)
+
+
 def _parse_line(line: str) -> Tuple[object, str]:
     m = HEADING.match(line)
     if not m:

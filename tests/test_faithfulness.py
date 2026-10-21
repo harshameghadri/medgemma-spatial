@@ -283,3 +283,11 @@ def test_strip_thinking_keeps_only_the_answer():
         == "**TISSUE MICROENVIRONMENT**\nX."
     assert strip_thinking("<unused94>thought\nstill planning when tokens ran out") == ""
     assert strip_thinking("**VALIDATION CAVEATS**\nConfirm.") == "**VALIDATION CAVEATS**\nConfirm."
+
+
+def test_normalise_headings_fixes_misspelled_sections_only():
+    from src.report_generation.faithfulness import normalise_headings
+
+    text = "**VALIDATION CAVES**\nConfirm by IHC.\n\n**MECHANISM OF ACTION**\nX.\n\n**Notes**\nY."
+    assert normalise_headings(text) == "**VALIDATION CAVEATS**\nConfirm by IHC.\n\n**MECHANISM OF ACTION**\nX.\n\n**Notes**\nY."
+    assert normalise_headings("**VALIDATION CAVESATS**: check it") == "**VALIDATION CAVEATS** check it"

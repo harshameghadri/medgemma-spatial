@@ -180,9 +180,9 @@ def generate_from_messages(messages, model_id: str = DEFAULT_MODEL_ID, device: O
     input_len = inputs["input_ids"].shape[-1]
     with torch.inference_mode():
         output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    from src.report_generation.faithfulness import strip_thinking
+    from src.report_generation.faithfulness import normalise_headings, strip_thinking
 
-    return strip_thinking(processor.decode(output[0][input_len:], skip_special_tokens=True))
+    return normalise_headings(strip_thinking(processor.decode(output[0][input_len:], skip_special_tokens=True)))
 
 
 def _system_message():

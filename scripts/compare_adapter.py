@@ -21,7 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from src.report_generation.faithfulness import HEADING, WORD, score_report, strip_thinking  # noqa: E402
+from src.report_generation.faithfulness import HEADING, WORD, normalise_headings, score_report, strip_thinking  # noqa: E402
 from src.report_generation.prompt_builder import REPORT_WORDS, evaluate_report_quality  # noqa: E402
 
 PASS_CRITERIA = (
@@ -35,12 +35,14 @@ PASS_CRITERIA = (
 REPORTED = (
     "moa_novel_mean: MoA terms outside prompt-copied spans",
     "reports_copying_prompt: reports with a 5+ word run copied from the prompt",
+    "all_sections_normalised: all 4 sections after normalise_headings (the app applies it)",
 )
 
 
 def score(text: str, prompt: str, pubmed=None) -> dict:
     rec = score_report(text, prompt)
     rec["moa_hits"] = evaluate_report_quality(text, {})["moa_hits"]
+    rec["sections_normalised"] = score_report(normalise_headings(text), prompt)["sections"]
     rec["moa_novel"] = evaluate_report_quality(own_words(text, rec["copied_spans"]), {})["moa_hits"]
     if pubmed is not None:
         from src.report_generation.pubmed_check import check_citations
@@ -64,6 +66,7 @@ def summarise(results: list, name: str) -> dict:
         "words_median": statistics.median(r["words"] for r in recs),
         "in_word_range": sum(lo <= r["words"] <= hi + 20 for r in recs),
         "all_sections": sum(len(r["sections"]) == 4 for r in recs),
+        "all_sections_normalised": sum(len(r["sections_normalised"]) == 4 for r in recs),
         "moa_mean": round(statistics.mean(r["moa_hits"] for r in recs), 2),
         "moa_novel_mean": round(statistics.mean(r["moa_novel"] for r in recs), 2),
         "reports_copying_prompt": sum(bool(r["copied_spans"]) for r in recs),
