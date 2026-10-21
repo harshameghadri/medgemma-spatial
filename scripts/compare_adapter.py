@@ -80,6 +80,34 @@ def summarise(results: list, name: str) -> dict:
     }
 
 
+DISTILL_CRITERIA = (
+    "citations: 0 reports with a citation",
+    "unsupported numbers: total <= base",
+    "unsupported cell types: total <= base",
+    "sections: all 4 after normalisation >= base",
+    "length: in REPORT_WORDS range >= base",
+    "prompt copying: reports copying >= 5 words <= base",
+    "MoA: moa_novel_mean >= base + moa_margin (Llama student -0.5, MedGemma student +1.0)",
+)
+
+
+def verdict_distill(summary: dict, moa_margin: float) -> dict:
+    """Apply DISTILL_CRITERIA (fixed before any distilled training) to an adapter-vs-base summary."""
+    a, b = summary.get("adapter"), summary["base"]
+    if a is None:
+        return {}
+    checks = {
+        "citations": a["reports_with_citation"] == 0,
+        "unsupported_numbers": a["unsupported_numbers"] <= b["unsupported_numbers"],
+        "unsupported_cell_types": a["unsupported_cell_types"] <= b["unsupported_cell_types"],
+        "sections": a["all_sections_normalised"] >= b["all_sections_normalised"],
+        "length": a["in_word_range"] >= b["in_word_range"],
+        "prompt_copying": a["reports_copying_prompt"] <= b["reports_copying_prompt"],
+        "moa": a["moa_novel_mean"] >= b["moa_novel_mean"] + moa_margin,
+    }
+    return {**checks, "moa_margin": moa_margin, "pass": all(checks.values())}
+
+
 def verdict(summary: dict) -> dict:
     """Apply PASS_CRITERIA (fixed before training) to an adapter-vs-base summary."""
     a, b = summary.get("adapter"), summary["base"]
@@ -140,6 +168,9 @@ def main(argv=None):
     p.add_argument("--out", default=None)
     p.add_argument("--rescore", default=None, help="re-score texts in an existing comparison.json")
     p.add_argument("--pubmed", action="store_true", help="verify citations against PubMed")
+    p.add_argument("--criteria", choices=["v2", "distill"], default="v2",
+                   help="v2 = PASS_CRITERIA (adapter v2); distill = DISTILL_CRITERIA")
+    p.add_argument("--moa-margin", type=float, default=-0.5, help="distill criteria: required MoA change vs base")
     args = p.parse_args(argv)
 
     rows = [json.loads(line) for line in open(args.eval)]
@@ -183,9 +214,9 @@ def main(argv=None):
         results.append(rec)
 
     summary = {name: summarise(results, name) for name in ("base", "adapter") if name in results[0]}
-    summary["verdict"] = verdict(summary)
+    summary["verdict"] = verdict_distill(summary, args.moa_margin) if args.criteria == "distill" else verdict(summary)
     out = Path(args.out or (Path(args.adapter) / "comparison.json" if args.adapter else "comparison.json"))
-    out.write_text(json.dumps({"summary": summary, "criteria": PASS_CRITERIA, "reported": REPORTED, "examples": results}, indent=2))
+    out.write_text(json.dumps({"summary": summary, "criteria": DISTILL_CRITERIA if args.criteria == "distill" else PASS_CRITERIA, "reported": REPORTED, "examples": results}, indent=2))
     print(json.dumps(summary, indent=2))
     print(f"saved {out}")
 
