@@ -10,6 +10,8 @@ import os
 import re
 from typing import Dict, Optional
 
+from src.report_generation.faithfulness import label_lineage
+
 IMMUNE_TERMS = (
     't cell', 'b cell', 'nk cell', 'ilc', 'macrophage', 'monocyte', 'plasma',
     'dendritic', 'dc', 'neutrophil', 'mast', 'granulocyte', 'lymphocyte',
@@ -67,8 +69,12 @@ def _fmt(value: Optional[float], spec: str = '.2f') -> str:
 def cell_type_list(features: Dict) -> str:
     """Detected cell-type names by abundance, without counts."""
     counts = features.get('annotation', {}).get('cell_type_counts') or {}
-    names = [str(k).replace('_', ' ') for k, v in sorted(counts.items(), key=lambda kv: -kv[1])
-             if k != 'Unknown' and v > 0]
+    names = []
+    for k, v in sorted(counts.items(), key=lambda kv: -kv[1]):
+        if k == 'Unknown' or v <= 0:
+            continue
+        lineage = label_lineage(str(k))
+        names.append(f"{str(k).replace('_', ' ')} ({lineage})" if lineage else str(k).replace('_', ' '))
     return ', '.join(names) if names else 'not available'
 
 

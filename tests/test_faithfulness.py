@@ -218,3 +218,16 @@ def test_multimodal_prompt_grounds_listed_cell_types():
 def test_section_emptied_by_guard_loses_its_heading():
     text = "**MECHANISM OF ACTION**\n\nMDSCs suppress immunity.\n\n**VALIDATION CAVEATS**\n\nConfirm with IHC."
     assert review_report(text, PROMPT)["clean_text"] == "**VALIDATION CAVEATS**\n\nConfirm with IHC."
+
+
+def test_atlas_labels_ground_their_lineage():
+    from src.report_generation.faithfulness import label_lineage
+
+    assert label_lineage("LummHR-SCGB") == "epithelial cells" and label_lineage("Fibro-major") == "fibroblasts"
+    assert label_lineage("CD4-Treg") == "regulatory T cells" and label_lineage("Lymph-major") == "endothelial cells"
+    assert label_lineage("T_cells") == "" and label_lineage("Lymphocytes") == ""
+    features = {"annotation": {"cell_type_counts": {"LummHR-SCGB": 3000, "plasma_IgG": 400, "Macro-m2": 100}}}
+    prompt = generate_medgemma_prompt(features)
+    assert "LummHR-SCGB (epithelial cells)" in prompt and "plasma IgG (plasma cells)" in prompt
+    text = "Luminal epithelial cells, plasma cells and M2 macrophages dominate; T cells are sparse."
+    assert unsupported_cell_types(text, prompt) == ["t_cell"]

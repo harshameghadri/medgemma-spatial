@@ -40,6 +40,31 @@ CELL_TYPE_PATTERNS: Dict[str, re.Pattern] = {
     "mdsc": re.compile(r"\bMDSCs?\b|\bmyeloid[\s-]derived suppressor\b", _I),
 }
 
+LABEL_LINEAGE = (
+    (re.compile(r"Treg", _I), "regulatory T cells"),
+    (re.compile(r"^(?:CD4|CD8|T)[-_ ]|^(?:Tem|Tcm|MAIT)\b"), "T cells"),
+    (re.compile(r"^(?:Lum|Basal\b|Myoepi)", _I), "epithelial cells"),
+    (re.compile(r"^Fibro", _I), "fibroblasts"),
+    (re.compile(r"^Macro", _I), "macrophages"),
+    (re.compile(r"^Mono", _I), "monocytes"),
+    (re.compile(r"^Mast", _I), "mast cells"),
+    (re.compile(r"^NK", _I), "NK cells"),
+    (re.compile(r"^Neutro", _I), "neutrophils"),
+    (re.compile(r"^(?:Vas|Lymph)-", _I), "endothelial cells"),
+    (re.compile(r"^(?:b[-_]|bmem)|^B[-_ ](?:naive|mem)", _I), "B cells"),
+    (re.compile(r"^(?:[mpc]DC\d?|DC\d?)$"), "dendritic cells"),
+    (re.compile(r"^plasma", _I), "plasma cells"),
+)
+
+
+def label_lineage(label: str) -> str:
+    """Plain lineage for an atlas label (e.g. 'LummHR-SCGB' -> 'epithelial cells'), '' if unknown or already plain."""
+    for pat, lineage in LABEL_LINEAGE:
+        if pat.search(label):
+            return "" if cell_types_in(lineage) <= cell_types_in(label.replace("_", " ")) else lineage
+    return ""
+
+
 HEADING = re.compile(r"^\s*(?:#{1,6}\s*)?\*\*(?P<title>[^*]+?)\*\*:?\s*(?P<rest>.*)$|^\s*#{1,6}\s*(?P<md>.+?)\s*$")
 SECTIONS = ("TISSUE MICROENVIRONMENT", "MECHANISM OF ACTION", "THERAPEUTIC IMPLICATIONS", "VALIDATION CAVEATS")
 _SECTION_RULES = (
