@@ -1,0 +1,15 @@
+# pip-audit advisories accepted on requirements.txt, one ID per line, with reason.
+# Remove each entry once the fix version can be locked.
+#
+# Pillow < 13.0.0 (added 2026-10-21). Fixed in 13.0.0, but every streamlit release
+# up to 1.66.0 requires pillow<13, so the fix cannot be locked yet. Not reachable here:
+# the app only uploads .h5ad/.h5 and only calls Image.fromarray on a numpy array; it never
+# has Pillow decode a PDF, GIF, TIFF or EPS file, nor uses ImageMorph.
+GHSA-p4wg-p73j-c528  pillow  PDF page-tree recursion
+GHSA-65qm-jvmh-6pqg  pillow  GIF seek after DecompressionBombError
+GHSA-58r4-6rv3-gfh8  pillow  ImageMorph zero-width image
+GHSA-pchr-8j38-3x4p  pillow  TIFF encoder ColorMap
+GHSA-q45j-58j2-45rg  pillow  TIFF short JPEG strips
+GHSA-462x-pgg6-55fp  pillow  tiled-TIFF copy4
+GHSA-c6hw-5grf-ff96  pillow  TIFF tile/RGBA OOB read
+GHSA-vx6w-vv9f-6gvg  pillow  EPS decompression bomb
