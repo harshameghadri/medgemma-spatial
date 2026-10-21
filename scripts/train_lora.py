@@ -77,18 +77,19 @@ def find_data_files(data_dir: str):
 
 def load_data(data_dir: str):
     """Load prompt-completion JSONL into a DatasetDict."""
-    from datasets import load_dataset
+    from datasets import DatasetDict, load_dataset
 
     train, evals = find_data_files(data_dir)
-    files = {"train": str(train)}
-    if evals:
-        files["validation"] = str(evals)
-    ds = load_dataset("json", data_files=files)
-    missing = {"prompt", "completion"} - set(ds["train"].column_names)
-    if missing:
-        raise ValueError(
-            f"{train} lacks {sorted(missing)}; build it with scripts/build_lora_dataset.py "
-            "(the old single-'text' format trains on the prompt)")
+    files = {"train": train, **({"validation": evals} if evals else {})}
+    ds = DatasetDict()
+    for split, path in files.items():
+        part = load_dataset("json", data_files=str(path), split="train")
+        missing = {"prompt", "completion"} - set(part.column_names)
+        if missing:
+            raise ValueError(
+                f"{path} lacks {sorted(missing)}; build it with scripts/build_lora_dataset.py "
+                "(the old single-'text' format trains on the prompt)")
+        ds[split] = part.select_columns(["prompt", "completion"])
     print(f"Data: {train.parent} — train {len(ds['train'])}"
           + (f", eval {len(ds['validation'])}" if evals else ""))
     return ds
