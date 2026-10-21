@@ -324,3 +324,17 @@ def test_notice_requires_llama_name(tmp_path):
           "--base", "google/medgemma-4b-it", "--licences", "llama", "medgemma"])
     text = (tmp_path / "NOTICE.md").read_text()
     assert "Built with Llama." in text and "Health AI Developer Foundations" in text
+
+
+def test_distill_set_keeps_only_picked_drafts_in_card_order():
+    from build_distill_set import build
+
+    body = " ".join(["Macrophages and T cells border CAF-rich stroma around epithelial nests."] * 5)
+    good = "\n\n".join(f"**{s}**\n{body}" for s in SECTIONS)
+    drafts = [{"row": 0, "variant": 0, "passes": False, "text": "x"},
+              {"row": 0, "variant": 1, "passes": True, "text": good},
+              {"row": 1, "variant": 0, "passes": True, "text": good}]
+    rows = [{"prompt": [{"role": "user", "content": PROMPT}], "pattern": p} for p in ("a", "b")]
+    out, kept = build(drafts, {"r000": {"pick": 0}, "r001": {"pick": "none"}}, rows)
+    assert [r["source"] for r in out] == ["r000.v1"]
+    assert out[0]["completion"][0]["content"] == good and kept == {"a": 1}
