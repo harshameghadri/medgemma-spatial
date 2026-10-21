@@ -231,3 +231,11 @@ def test_atlas_labels_ground_their_lineage():
     assert "LummHR-SCGB (epithelial cells)" in prompt and "plasma IgG (plasma cells)" in prompt
     text = "Luminal epithelial cells, plasma cells and M2 macrophages dominate; T cells are sparse."
     assert unsupported_cell_types(text, prompt) == ["t_cell"]
+
+
+def test_multimodal_prompt_matches_training_prompt_plus_image_note():
+    from src.report_generation.medgemma_multimodal import create_multimodal_prompt
+
+    prompt = create_multimodal_prompt(FEATURES)
+    assert prompt.replace(prompt[prompt.index("H&E IMAGE"):prompt.index("SPATIAL TRANSCRIPTOMICS")], "") == PROMPT
+    assert all(f"**{s}**" in prompt for s in SECTIONS)

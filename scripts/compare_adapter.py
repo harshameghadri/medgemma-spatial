@@ -78,14 +78,19 @@ def verdict(summary: dict) -> dict:
 
 
 def load_model(model_id: str, adapter):
+    """4-bit model on GPU 0: Gemma 3 vision-language checkpoints or any text-only causal LM."""
     import torch
-    from transformers import AutoModelForImageTextToText, AutoTokenizer, BitsAndBytesConfig
+    from transformers import (AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer,
+                              BitsAndBytesConfig)
 
     tok = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForImageTextToText.from_pretrained(
-        model_id, device_map={"": 0}, dtype=torch.bfloat16,
-        quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
-                                               bnb_4bit_compute_dtype=torch.bfloat16))
+    config = AutoConfig.from_pretrained(model_id)
+    cls = AutoModelForImageTextToText if hasattr(config, "vision_config") else AutoModelForCausalLM
+    kwargs = {"device_map": {"": 0}, "dtype": torch.bfloat16}
+    if not getattr(config, "quantization_config", None):
+        kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
+                                                           bnb_4bit_compute_dtype=torch.bfloat16)
+    model = cls.from_pretrained(model_id, **kwargs)
     if adapter:
         from peft import PeftModel
         model = PeftModel.from_pretrained(model, adapter)

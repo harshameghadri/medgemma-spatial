@@ -109,64 +109,14 @@ def preprocess_for_medgemma(
 
 
 def create_multimodal_prompt(features: Dict) -> str:
-    """
-    Create prompt for multimodal MedGemma combining H&E image + spatial features.
+    """Text-only report prompt (the one the LoRA adapter trains on) plus an instruction to use the H&E image."""
+    from src.report_generation.prompt_builder import generate_medgemma_prompt
 
-    Uses anti-parroting strategy: exposes aggregated metrics only.
-
-    Parameters
-    ----------
-    features : dict
-        Spatial transcriptomics features (from uncertainty_spatial_analysis.py)
-
-    Returns
-    -------
-    str
-        Prompt for MedGemma multimodal input
-    """
-    from src.report_generation.prompt_builder import _fmt, _metric, cell_type_list, summarise_composition
-
-    comp = summarise_composition(features)
-    n_spots = comp['n_spots']
-    major_populations = comp['major_populations']
-    immune_types = comp['immune_cells']
-    morans_i = _metric(features, 'spatial_heterogeneity', 'morans_i_mean')
-    pred_entropy = _metric(features, 'uncertainty', 'mean_prediction_entropy')
-    has_spatial_het = morans_i is not None and morans_i > 0.3
-
-    prompt = f"""You are a computational pathologist analyzing spatial transcriptomics data with corresponding H&E histology.
-
-AVAILABLE INFORMATION:
-
-H&E IMAGE:
-- High-resolution tissue section provided above
-- Use morphological features to interpret spatial patterns
-
-MOLECULAR DATA:
-- Total tissue spots: {n_spots}
-- Cell types detected (most to least abundant): {cell_type_list(features)}
-- Major cell populations (>10% abundance): {len(major_populations)} types
-- Immune cell diversity: {len(immune_types)} distinct immune populations
-- Spatial organization: {'heterogeneous' if has_spatial_het else 'uniform'} (Moran's I = {_fmt(morans_i, '.3f')})
-- Annotation uncertainty (entropy): {_fmt(pred_entropy, '.3f')}
-- Annotation confidence: mean {_fmt(_metric(features, 'annotation', 'mean_confidence'))}
-
-TASK:
-Generate a 200-word clinical pathology report that:
-1. Describes tissue morphology visible in the H&E image
-2. Correlates morphological findings with molecular spatial patterns
-3. Interprets biological significance of spatial organization
-4. Provides clinical context
-
-CRITICAL:
-- DO NOT repeat exact numbers from the data
-- Discuss only the cell types listed above; do not cite specific studies
-- SYNTHESIZE insights from both image and molecular data
-- Focus on biological interpretation, not data enumeration
-
-Report:"""
-
-    return prompt
+    prompt = generate_medgemma_prompt(features)
+    return prompt.replace(
+        "SPATIAL TRANSCRIPTOMICS DATA SUMMARY:",
+        "H&E IMAGE: the tissue section above. Describe only morphology you can see in it; "
+        "if it is unclear, say so rather than guess.\n\nSPATIAL TRANSCRIPTOMICS DATA SUMMARY:", 1)
 
 
 def pick_device(device: Optional[str] = None) -> str:
