@@ -65,9 +65,36 @@ jupyter notebook
 # Run Streamlit app (Week 3 deployment)
 streamlit run app/streamlit_app.py
 
-# Process a Visium sample
-python -m src.spatial_analysis.pipeline --input data/sample_visium.h5ad --output outputs/
+# Process a Visium sample (Space Ranger folder: filtered_feature_bc_matrix.h5 + spatial/)
+python scripts/run_sample.py analyse --visium-dir data/my_sample --out runs/my_sample
+python scripts/run_sample.py report --out runs/my_sample --mode multimodal   # GPU or Apple MPS
 ```
+
+## 🔎 Check any model's report for grounding
+
+`scripts/check_report.py` works with any LLM's output, not just MedGemma. Give it the report and the exact prompt
+the model received. It needs no GPU and no model. It flags:
+
+1. **Numbers** that are not in the prompt (gene names like CXCL9 or IL-10 are not counted).
+2. **Cell types** the prompt did not list (atlas labels like `LummHR-SCGB` count as their lineage).
+3. **Citations**, each looked up in PubMed by first author, year and journal. A real paper cited with the wrong
+   journal is reported as `mismatch`.
+4. **Prompt copying**: runs of 5+ words copied verbatim from the prompt, i.e. the model repeating its
+   instructions back instead of reasoning.
+
+```bash
+python scripts/check_report.py --report report.md --prompt prompt.txt            # summary + cleaned report
+python scripts/check_report.py --report report.md --features features.json --json --offline
+```
+
+To compare models on the same 31 held-out prompts with the same criteria:
+
+```bash
+python scripts/compare_adapter.py --model-id <hf-model-id> --eval data/lora_v4/eval.jsonl --pubmed --out runs/x.json
+```
+
+The checks catch claims the input did not support. They do not catch wrong biology stated in grounded words,
+so a human still has to read the report.
 
 ## 📁 Project Structure
 

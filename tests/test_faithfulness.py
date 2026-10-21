@@ -1,5 +1,6 @@
 """Grounding checks, target scrubbing and PubMed citation verification (docs/REVIEW.md L9-L10)."""
 
+import json
 import sys
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -259,3 +260,17 @@ def test_moa_novel_ignores_copied_terms():
     copied = "**MECHANISM OF ACTION**\n\nWe see the TGF-beta signalling pathway mediated by fibroblasts here."
     rec = score(copied, prompt)
     assert rec["copied_spans"] and rec["moa_novel"] < rec["moa_hits"]
+
+
+def test_check_report_cli_offline(tmp_path, capsys):
+    from check_report import main
+
+    report = tmp_path / "r.md"
+    report.write_text("**MECHANISM OF ACTION**\n\nMDSCs suppress immunity. Helmink et al. (Nature, 2020) agree. "
+                      "T cells border CAF-rich stroma.")
+    prompt = tmp_path / "p.txt"
+    prompt.write_text(PROMPT)
+    main(["--report", str(report), "--prompt", str(prompt), "--offline", "--json"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["unsupported_cell_types"] == ["mdsc"] and out["pubmed"][0]["status"] == "unchecked"
+    assert out["clean_text"].endswith("T cells border CAF-rich stroma.") and out["changed"]
