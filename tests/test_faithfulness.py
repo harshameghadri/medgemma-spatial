@@ -313,3 +313,14 @@ def test_draft_gates_reject_ungrounded_and_copied_drafts():
     assert gates(good, PROMPT)["passes"]
     bad = good.replace("Macrophages and T cells", "MDSCs and T cells", 1)
     assert gates(bad, PROMPT)["checks"]["cell_types_grounded"] is False
+
+
+def test_notice_requires_llama_name(tmp_path):
+    from write_notice import main
+
+    with pytest.raises(SystemExit):
+        main(["--adapter-dir", str(tmp_path), "--name", "MedGemma-distill", "--base", "google/medgemma-4b-it"])
+    main(["--adapter-dir", str(tmp_path), "--name", "Llama-MedGemma-4B-spatial-distill-v1",
+          "--base", "google/medgemma-4b-it", "--licences", "llama", "medgemma"])
+    text = (tmp_path / "NOTICE.md").read_text()
+    assert "Built with Llama." in text and "Health AI Developer Foundations" in text
