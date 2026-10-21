@@ -21,7 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from src.report_generation.faithfulness import score_report  # noqa: E402
+from src.report_generation.faithfulness import WORD, HEADING, score_report  # noqa: E402
 from src.report_generation.prompt_builder import REPORT_WORDS, evaluate_report_quality  # noqa: E402
 
 PASS_CRITERIA = (
@@ -32,15 +32,28 @@ PASS_CRITERIA = (
     "sections: share with all 4 >= base",
     "MoA terms: mean >= base - 1",
 )
+REPORTED = (
+    "moa_novel_mean: MoA terms outside prompt-copied spans",
+    "reports_copying_prompt: reports with a 5+ word run copied from the prompt",
+)
 
 
 def score(text: str, prompt: str, pubmed=None) -> dict:
     rec = score_report(text, prompt)
     rec["moa_hits"] = evaluate_report_quality(text, {})["moa_hits"]
+    rec["moa_novel"] = evaluate_report_quality(own_words(text, rec["copied_spans"]), {})["moa_hits"]
     if pubmed is not None:
         from src.report_generation.pubmed_check import check_citations
         rec["pubmed"] = [{k: c.get(k) for k in ("text", "status", "pmid")} for c in check_citations(text, pubmed)]
     return rec
+
+
+def own_words(text: str, spans: list) -> str:
+    """Report body (headings dropped, lower-cased words) with prompt-copied spans cut out."""
+    body = " ".join(w.lower() for line in text.split("\n") if not HEADING.match(line) for w in WORD.findall(line))
+    for span in sorted(spans, key=len, reverse=True):
+        body = body.replace(span, " | ")
+    return body
 
 
 def summarise(results: list, name: str) -> dict:
@@ -52,6 +65,9 @@ def summarise(results: list, name: str) -> dict:
         "in_word_range": sum(lo <= r["words"] <= hi + 20 for r in recs),
         "all_sections": sum(len(r["sections"]) == 4 for r in recs),
         "moa_mean": round(statistics.mean(r["moa_hits"] for r in recs), 2),
+        "moa_novel_mean": round(statistics.mean(r["moa_novel"] for r in recs), 2),
+        "reports_copying_prompt": sum(bool(r["copied_spans"]) for r in recs),
+        "copied_words": sum(len(x.split()) for r in recs for x in r["copied_spans"]),
         "reports_with_citation": sum(r["citation_sentences"] > 0 for r in recs),
         "unsupported_numbers": sum(len(r["unsupported_numbers"]) for r in recs),
         "reports_with_unsupported_number": sum(bool(r["unsupported_numbers"]) for r in recs),
@@ -166,7 +182,7 @@ def main(argv=None):
     summary = {name: summarise(results, name) for name in ("base", "adapter") if name in results[0]}
     summary["verdict"] = verdict(summary)
     out = Path(args.out or (Path(args.adapter) / "comparison.json" if args.adapter else "comparison.json"))
-    out.write_text(json.dumps({"summary": summary, "criteria": PASS_CRITERIA, "examples": results}, indent=2))
+    out.write_text(json.dumps({"summary": summary, "criteria": PASS_CRITERIA, "reported": REPORTED, "examples": results}, indent=2))
     print(json.dumps(summary, indent=2))
     print(f"saved {out}")
 

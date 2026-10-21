@@ -239,3 +239,23 @@ def test_multimodal_prompt_matches_training_prompt_plus_image_note():
     prompt = create_multimodal_prompt(FEATURES)
     assert prompt.replace(prompt[prompt.index("H&E IMAGE"):prompt.index("SPATIAL TRANSCRIPTOMICS")], "") == PROMPT
     assert all(f"**{s}**" in prompt for s in SECTIONS)
+
+
+def test_copied_spans_flag_verbatim_prompt_reuse():
+    from src.report_generation.faithfulness import copied_spans
+
+    prompt = "Name the mechanism (e.g., TGF-β-mediated exclusion, IFN-γ/CXCL9 chemokine gradient)."
+    text = "**MECHANISM OF ACTION**\n\nAn IFN-γ/CXCL9 chemokine gradient recruits T cells. CAFs restrict access."
+    assert copied_spans(text, prompt, n=3) == ["ifn-γ/cxcl9 chemokine gradient"]
+    assert copied_spans("**MECHANISM OF ACTION**\n\nT cells cluster near CAFs.", prompt, n=3) == []
+    assert "e.g." not in PROMPT and "TGF-β-mediated exclusion" not in PROMPT
+
+
+def test_moa_novel_ignores_copied_terms():
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from compare_adapter import score
+
+    prompt = "Explain the TGF-beta signalling pathway mediated by fibroblasts in this sample please."
+    copied = "**MECHANISM OF ACTION**\n\nWe see the TGF-beta signalling pathway mediated by fibroblasts here."
+    rec = score(copied, prompt)
+    assert rec["copied_spans"] and rec["moa_novel"] < rec["moa_hits"]

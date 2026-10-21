@@ -145,7 +145,7 @@ Generate a {REPORT_WORDS[0]}-{REPORT_WORDS[1]} word expert pathology report with
 
 **TISSUE MICROENVIRONMENT** (2-3 sentences): Describe the dominant spatial architecture and cellular organisation.
 
-**MECHANISM OF ACTION** (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism (e.g., TGF-β-mediated exclusion, IFN-γ/CXCL9 chemokine gradient, VEGF-driven angiogenic niche). Explain how spatial co-localisation or exclusion patterns support this mechanism.
+**MECHANISM OF ACTION** (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism that best fits this sample. Explain how spatial co-localisation or exclusion patterns support this mechanism.
 
 **THERAPEUTIC IMPLICATIONS** (2-3 sentences): Recommend a specific evidence-based therapeutic strategy or combination (name drug class or agent where possible). State the biological rationale for this approach.
 
@@ -156,6 +156,7 @@ CRITICAL RULES:
 - Do not cite specific studies, authors, journals or years
 - Do not state cell counts, percentages or any number not given above
 - SYNTHESISE mechanisms — do not enumerate observations
+- Write in your own words; do not reuse phrases from these instructions
 
 Report:"""
 

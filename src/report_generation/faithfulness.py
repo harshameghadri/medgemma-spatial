@@ -124,9 +124,36 @@ def sentence_issues(sentence: str, prompt: str) -> List[str]:
     return issues
 
 
+COPY_WORDS = 5
+WORD = re.compile(r"[^\W_]+(?:[-/'][^\W_]+)*")
+
+
+def copied_spans(text: str, prompt: str, n: int = COPY_WORDS) -> List[str]:
+    """Runs of n+ consecutive words the report copies verbatim from the prompt (headings ignored)."""
+    body = "\n".join(line for line in text.split("\n") if not HEADING.match(line))
+    words = [w.lower() for w in WORD.findall(body)]
+    p = [w.lower() for w in WORD.findall(prompt)]
+    grams = {tuple(p[i:i + n]) for i in range(len(p) - n + 1)}
+    covered = [False] * len(words)
+    for i in range(len(words) - n + 1):
+        if tuple(words[i:i + n]) in grams:
+            covered[i:i + n] = [True] * n
+    spans, cur = [], []
+    for w, c in zip(words, covered):
+        if c:
+            cur.append(w)
+        elif cur:
+            spans.append(" ".join(cur))
+            cur = []
+    if cur:
+        spans.append(" ".join(cur))
+    return spans
+
+
 def score_report(text: str, prompt: str) -> Dict:
     """Grounding summary for one generated report."""
     return {
+        "copied_spans": copied_spans(text, prompt),
         "words": len(text.split()),
         "citations": [c["text"] for c in extract_citations(text)],
         "citation_sentences": sum("citation" in sentence_issues(s, prompt) for s in split_sentences(text)),
