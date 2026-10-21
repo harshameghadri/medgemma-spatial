@@ -274,3 +274,12 @@ def test_check_report_cli_offline(tmp_path, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["unsupported_cell_types"] == ["mdsc"] and out["pubmed"][0]["status"] == "unchecked"
     assert out["clean_text"].endswith("T cells border CAF-rich stroma.") and out["changed"]
+
+
+def test_strip_thinking_keeps_only_the_answer():
+    from src.report_generation.faithfulness import strip_thinking
+
+    assert strip_thinking("<unused94>thought\nPlan: copy the prompt.<unused95>**TISSUE MICROENVIRONMENT**\nX.") \
+        == "**TISSUE MICROENVIRONMENT**\nX."
+    assert strip_thinking("<unused94>thought\nstill planning when tokens ran out") == ""
+    assert strip_thinking("**VALIDATION CAVEATS**\nConfirm.") == "**VALIDATION CAVEATS**\nConfirm."

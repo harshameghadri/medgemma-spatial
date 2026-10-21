@@ -124,6 +124,14 @@ def sentence_issues(sentence: str, prompt: str) -> List[str]:
     return issues
 
 
+THINKING = re.compile(r"<unused94>thought.*?(?:<unused95>|$)", re.S)
+
+
+def strip_thinking(text: str) -> str:
+    """Drop a MedGemma 1.5 thinking block ('<unused94>thought ... <unused95>'); unfinished thinking leaves ''."""
+    return THINKING.sub("", text).strip()
+
+
 COPY_WORDS = 5
 WORD = re.compile(r"[^\W_]+(?:[-/'][^\W_]+)*")
 

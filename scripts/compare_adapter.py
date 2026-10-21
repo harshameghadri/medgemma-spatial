@@ -21,7 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from src.report_generation.faithfulness import WORD, HEADING, score_report  # noqa: E402
+from src.report_generation.faithfulness import HEADING, WORD, score_report, strip_thinking  # noqa: E402
 from src.report_generation.prompt_builder import REPORT_WORDS, evaluate_report_quality  # noqa: E402
 
 PASS_CRITERIA = (
@@ -124,7 +124,7 @@ def generate(tok, model, row, use_adapter: bool, max_new_tokens: int) -> str:
         else model.disable_adapter()
     with torch.inference_mode(), ctx:
         out = model.generate(**ids, max_new_tokens=max_new_tokens, do_sample=False)
-    return tok.decode(out[0][ids["input_ids"].shape[-1]:], skip_special_tokens=True).strip()
+    return strip_thinking(tok.decode(out[0][ids["input_ids"].shape[-1]:], skip_special_tokens=True))
 
 
 def main(argv=None):
