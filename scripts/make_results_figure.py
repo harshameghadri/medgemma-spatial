@@ -104,7 +104,6 @@ def build(d):
     b = panel("B", "The errors had a shape",
               "First blinded read (28 reports): reports tagged with each error kind; a report can carry several.",
               bars([(lab, [kinds.get(k, 0)]) for k, lab in order], [("Reports", BAD)], 8, 2, "Reports"))
-    s3 = [("Plain prompt", PLAIN), ("+ retrieved reports", FULL), ("+ curated axes", EVID)]
     c = panel("C", "Fewer reports flagged by the biology check",
               "MedGemma 4B, 31 held-out prompts: reports with at least one flag.",
               bars([("Plain", [d["mg"]["base"]["biology_flagged_reports"]]),
