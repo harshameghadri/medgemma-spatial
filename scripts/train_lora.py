@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""LoRA / QLoRA fine-tuning of MedGemma on spatial pathology reports.
+"""LoRA / QLoRA fine-tuning of MedGemma (or a text-only causal LM such as Llama 3.1) on spatial pathology reports.
 
 Runs the same way on a Kaggle T4, a CUDA workstation, an M1 Mac or CPU (the
 last two only for smoke tests). Expects prompt-completion JSONL produced by
@@ -27,6 +27,12 @@ import sys
 from pathlib import Path
 
 DEFAULT_TARGETS = r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj)"
+CAUSAL_LM_TARGETS = r".*\.(q_proj|k_proj|v_proj|o_proj)"
+
+
+def default_targets(config) -> str:
+    """Attention projections of the language model: Gemma 3 VLMs nest it, text-only LMs (Llama) do not."""
+    return DEFAULT_TARGETS if hasattr(config, "vision_config") else CAUSAL_LM_TARGETS
 
 
 def parse_args(argv=None):
@@ -46,7 +52,7 @@ def parse_args(argv=None):
     p.add_argument("--lora-r", type=int, default=16)
     p.add_argument("--lora-alpha", type=int, default=32)
     p.add_argument("--lora-dropout", type=float, default=0.05)
-    p.add_argument("--target-modules", default=DEFAULT_TARGETS,
+    p.add_argument("--target-modules", default=None,
                    help="Regex over module names; default = language-model attention only")
     p.add_argument("--quantize", choices=["auto", "4bit", "none"], default="auto",
                    help="auto = 4-bit when CUDA + bitsandbytes are available")
@@ -71,18 +77,19 @@ def find_data_files(data_dir: str):
 
 def load_data(data_dir: str):
     """Load prompt-completion JSONL into a DatasetDict."""
-    from datasets import load_dataset
+    from datasets import DatasetDict, load_dataset
 
     train, evals = find_data_files(data_dir)
-    files = {"train": str(train)}
-    if evals:
-        files["validation"] = str(evals)
-    ds = load_dataset("json", data_files=files)
-    missing = {"prompt", "completion"} - set(ds["train"].column_names)
-    if missing:
-        raise ValueError(
-            f"{train} lacks {sorted(missing)}; build it with scripts/build_lora_dataset.py "
-            "(the old single-'text' format trains on the prompt)")
+    files = {"train": train, **({"validation": evals} if evals else {})}
+    ds = DatasetDict()
+    for split, path in files.items():
+        part = load_dataset("json", data_files=str(path), split="train")
+        missing = {"prompt", "completion"} - set(part.column_names)
+        if missing:
+            raise ValueError(
+                f"{path} lacks {sorted(missing)}; build it with scripts/build_lora_dataset.py "
+                "(the old single-'text' format trains on the prompt)")
+        ds[split] = part.select_columns(["prompt", "completion"])
     print(f"Data: {train.parent} — train {len(ds['train'])}"
           + (f", eval {len(ds['validation'])}" if evals else ""))
     return ds
@@ -135,14 +142,21 @@ def resolve_precision(choice: str):
 
 
 def load_model(model_id: str, quantize: str, dtype):
-    """Load MedGemma (Gemma 3 image-text-to-text) with optional 4-bit NF4 weights."""
+    """Load MedGemma (Gemma 3 image-text-to-text) or a text-only causal LM, optionally in 4-bit NF4."""
     import torch
-    from transformers import AutoModelForImageTextToText
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText
 
     token = os.environ.get("HF_TOKEN")
-    use_4bit = quantize == "4bit" or (quantize == "auto" and torch.cuda.is_available())
-    kwargs = {"dtype": dtype, "token": token, "attn_implementation": "eager"}
-    if use_4bit:
+    config = AutoConfig.from_pretrained(model_id, token=token)
+    vlm = hasattr(config, "vision_config")
+    prequantized = bool(getattr(config, "quantization_config", None))
+    use_4bit = prequantized or quantize == "4bit" or (quantize == "auto" and torch.cuda.is_available())
+    kwargs = {"dtype": dtype, "token": token}
+    if vlm:
+        kwargs["attn_implementation"] = "eager"
+    if prequantized:
+        kwargs["device_map"] = {"": 0}
+    elif use_4bit:
         from transformers import BitsAndBytesConfig
 
         kwargs["quantization_config"] = BitsAndBytesConfig(
@@ -152,7 +166,7 @@ def load_model(model_id: str, quantize: str, dtype):
             bnb_4bit_compute_dtype=dtype,
         )
         kwargs["device_map"] = {"": 0}
-    model = AutoModelForImageTextToText.from_pretrained(model_id, **kwargs)
+    model = (AutoModelForImageTextToText if vlm else AutoModelForCausalLM).from_pretrained(model_id, **kwargs)
     model.config.use_cache = False
     print(f"Model: {model_id} ({type(model).__name__}, 4-bit={use_4bit}, dtype={dtype})")
     return model, use_4bit
@@ -177,7 +191,7 @@ def build_trainer(args, model, tokenizer, dataset, use_4bit, bf16, fp16):
         r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
-        target_modules=args.target_modules,
+        target_modules=args.target_modules or default_targets(model.config),
         bias="none",
         task_type="CAUSAL_LM",
     )

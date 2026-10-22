@@ -21,6 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from src.report_generation.biology_check import check_report  # noqa: E402
 from src.report_generation.faithfulness import HEADING, WORD, normalise_headings, score_report, strip_thinking  # noqa: E402
 from src.report_generation.prompt_builder import REPORT_WORDS, evaluate_report_quality  # noqa: E402
 
@@ -39,8 +40,9 @@ REPORTED = (
 )
 
 
-def score(text: str, prompt: str, pubmed=None) -> dict:
+def score(text: str, prompt: str, pubmed=None, pattern=None) -> dict:
     rec = score_report(text, prompt)
+    rec["biology_flags"] = [f"{f['check']}: {f['detail']}" for f in check_report(text, prompt, pattern)]
     rec["moa_hits"] = evaluate_report_quality(text, {})["moa_hits"]
     rec["sections_normalised"] = score_report(normalise_headings(text), prompt)["sections"]
     rec["moa_novel"] = evaluate_report_quality(own_words(text, rec["copied_spans"]), {})["moa_hits"]
@@ -75,9 +77,38 @@ def summarise(results: list, name: str) -> dict:
         "unsupported_numbers": sum(len(r["unsupported_numbers"]) for r in recs),
         "reports_with_unsupported_number": sum(bool(r["unsupported_numbers"]) for r in recs),
         "unsupported_cell_types": sum(len(r["unsupported_cell_types"]) for r in recs),
+        "biology_flagged_reports": sum(bool(r.get("biology_flags")) for r in recs),
         "pubmed_verified": sum(c["status"] == "verified" for r in recs for c in r.get("pubmed", [])),
         "pubmed_unverified": sum(c["status"] != "verified" for r in recs for c in r.get("pubmed", [])),
     }
+
+
+DISTILL_CRITERIA = (
+    "citations: 0 reports with a citation",
+    "unsupported numbers: total <= base",
+    "unsupported cell types: total <= base",
+    "sections: all 4 after normalisation >= base",
+    "length: in REPORT_WORDS range >= base",
+    "prompt copying: reports copying >= 5 words <= base",
+    "MoA: moa_novel_mean >= base + moa_margin (Llama student -0.5, MedGemma student +1.0)",
+)
+
+
+def verdict_distill(summary: dict, moa_margin: float) -> dict:
+    """Apply DISTILL_CRITERIA (fixed before any distilled training) to an adapter-vs-base summary."""
+    a, b = summary.get("adapter"), summary["base"]
+    if a is None:
+        return {}
+    checks = {
+        "citations": a["reports_with_citation"] == 0,
+        "unsupported_numbers": a["unsupported_numbers"] <= b["unsupported_numbers"],
+        "unsupported_cell_types": a["unsupported_cell_types"] <= b["unsupported_cell_types"],
+        "sections": a["all_sections_normalised"] >= b["all_sections_normalised"],
+        "length": a["in_word_range"] >= b["in_word_range"],
+        "prompt_copying": a["reports_copying_prompt"] <= b["reports_copying_prompt"],
+        "moa": a["moa_novel_mean"] >= b["moa_novel_mean"] + moa_margin,
+    }
+    return {**checks, "moa_margin": moa_margin, "pass": all(checks.values())}
 
 
 def verdict(summary: dict) -> dict:
@@ -140,6 +171,9 @@ def main(argv=None):
     p.add_argument("--out", default=None)
     p.add_argument("--rescore", default=None, help="re-score texts in an existing comparison.json")
     p.add_argument("--pubmed", action="store_true", help="verify citations against PubMed")
+    p.add_argument("--criteria", choices=["v2", "distill"], default="v2",
+                   help="v2 = PASS_CRITERIA (adapter v2); distill = DISTILL_CRITERIA")
+    p.add_argument("--moa-margin", type=float, default=-0.5, help="distill criteria: required MoA change vs base")
     args = p.parse_args(argv)
 
     rows = [json.loads(line) for line in open(args.eval)]
@@ -175,7 +209,7 @@ def main(argv=None):
         rec = {"pattern": row.get("pattern"), "reference": row["completion"][0]["content"]}
         generated = {k: (v, None) for k, v in texts[i].items()} if gen is None else gen(row)
         for name, (text, secs) in generated.items():
-            rec[name] = {"text": text, "seconds": secs, **score(text, prompt, pubmed)}
+            rec[name] = {"text": text, "seconds": secs, **score(text, prompt, pubmed, row.get("pattern"))}
             r = rec[name]
             print(f"[{i}] {str(row.get('pattern')):<20} {name:<7} words={r['words']:<4} "
                   f"sections={len(r['sections'])} moa={r['moa_hits']} cites={r['citation_sentences']} "
@@ -183,9 +217,9 @@ def main(argv=None):
         results.append(rec)
 
     summary = {name: summarise(results, name) for name in ("base", "adapter") if name in results[0]}
-    summary["verdict"] = verdict(summary)
+    summary["verdict"] = verdict_distill(summary, args.moa_margin) if args.criteria == "distill" else verdict(summary)
     out = Path(args.out or (Path(args.adapter) / "comparison.json" if args.adapter else "comparison.json"))
-    out.write_text(json.dumps({"summary": summary, "criteria": PASS_CRITERIA, "reported": REPORTED, "examples": results}, indent=2))
+    out.write_text(json.dumps({"summary": summary, "criteria": DISTILL_CRITERIA if args.criteria == "distill" else PASS_CRITERIA, "reported": REPORTED, "examples": results}, indent=2))
     print(json.dumps(summary, indent=2))
     print(f"saved {out}")
 

@@ -1,0 +1,7 @@
+{
+ "fetched": "2026-10-22",
+ "interactions": "https://omnipathdb.org/interactions?datasets=omnipath,ligrecextra&genesymbols=yes&license=commercial&fields=sources&format=tsv",
+ "intercell": "https://omnipathdb.org/intercell?categories=ligand,receptor&scope=generic&license=commercial&format=tsv",
+ "pairs": 15208,
+ "intercell_genes": 9228
+}

@@ -291,3 +291,50 @@ def test_normalise_headings_fixes_misspelled_sections_only():
     text = "**VALIDATION CAVES**\nConfirm by IHC.\n\n**MECHANISM OF ACTION**\nX.\n\n**Notes**\nY."
     assert normalise_headings(text) == "**VALIDATION CAVEATS**\nConfirm by IHC.\n\n**MECHANISM OF ACTION**\nX.\n\n**Notes**\nY."
     assert normalise_headings("**VALIDATION CAVESATS**: check it") == "**VALIDATION CAVEATS** check it"
+
+
+def test_lora_targets_follow_architecture():
+    from types import SimpleNamespace
+
+    from train_lora import CAUSAL_LM_TARGETS, DEFAULT_TARGETS, default_targets
+
+    assert default_targets(SimpleNamespace(vision_config={})) == DEFAULT_TARGETS
+    assert default_targets(SimpleNamespace()) == CAUSAL_LM_TARGETS
+    import re
+    assert re.fullmatch(CAUSAL_LM_TARGETS, "model.layers.3.self_attn.q_proj")
+    assert not re.fullmatch(CAUSAL_LM_TARGETS, "model.layers.3.mlp.down_proj")
+
+
+def test_draft_gates_reject_ungrounded_and_copied_drafts():
+    from draft_targets import gates
+
+    body = " ".join(["Macrophages and T cells border CAF-rich stroma around epithelial nests."] * 5)
+    good = "\n\n".join(f"**{s}**\n{body}" for s in SECTIONS)
+    assert gates(good, PROMPT)["passes"]
+    bad = good.replace("Macrophages and T cells", "MDSCs and T cells", 1)
+    assert gates(bad, PROMPT)["checks"]["cell_types_grounded"] is False
+
+
+def test_notice_requires_llama_name(tmp_path):
+    from write_notice import main
+
+    with pytest.raises(SystemExit):
+        main(["--adapter-dir", str(tmp_path), "--name", "MedGemma-distill", "--base", "google/medgemma-4b-it"])
+    main(["--adapter-dir", str(tmp_path), "--name", "Llama-MedGemma-4B-spatial-distill-v1",
+          "--base", "google/medgemma-4b-it", "--licences", "llama", "medgemma"])
+    text = (tmp_path / "NOTICE.md").read_text()
+    assert "Built with Llama." in text and "Health AI Developer Foundations" in text
+
+
+def test_distill_set_keeps_only_picked_drafts_in_card_order():
+    from build_distill_set import build
+
+    body = " ".join(["Macrophages and T cells border CAF-rich stroma around epithelial nests."] * 5)
+    good = "\n\n".join(f"**{s}**\n{body}" for s in SECTIONS)
+    drafts = [{"row": 0, "variant": 0, "passes": False, "text": "x"},
+              {"row": 0, "variant": 1, "passes": True, "text": good},
+              {"row": 1, "variant": 0, "passes": True, "text": good}]
+    rows = [{"prompt": [{"role": "user", "content": PROMPT}], "pattern": p} for p in ("a", "b")]
+    out, kept = build(drafts, {"r000": {"pick": 0}, "r001": {"pick": "none"}}, rows)
+    assert [r["source"] for r in out] == ["r000.v1"]
+    assert out[0]["completion"][0]["content"] == good and kept == {"a": 1}
