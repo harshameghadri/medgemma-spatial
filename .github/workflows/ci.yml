@@ -114,7 +114,9 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - name: Audit locked requirements
-        run: pip-audit -r requirements.txt --disable-pip --no-deps --progress-spinner off
+        run: |
+          ignores=$(grep -oE '^(GHSA|PYSEC|CVE)-[^ ]+' audit-ignore.txt | sed 's/^/--ignore-vuln /' | tr '\n' ' ')
+          pip-audit -r requirements.txt --disable-pip --no-deps --progress-spinner off $ignores
       - name: Audit training requirements
         run: pip-audit -r requirements-train.txt --disable-pip --no-deps --progress-spinner off
 

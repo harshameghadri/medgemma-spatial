@@ -28,6 +28,7 @@ try:
         generate_multimodal_report,
         generate_textonly_fallback
     )
+    from src.report_generation.pubmed_check import review_report
 except ImportError as e:
     st.error(f"Missing dependencies: {e}")
     st.stop()
@@ -284,10 +285,41 @@ def _run_model(adata, features, use_multimodal):
     return generate_textonly_fallback(features)
 
 
+def show_grounding_review(review, raw_report):
+    """Flag claims the report makes that its input did not support."""
+    st.markdown("### 🔎 Grounding check")
+    issues = []
+    if review['unsupported_numbers']:
+        issues.append("Numbers not present in the input (sentences removed): "
+                      + ", ".join(review['unsupported_numbers']))
+    if review['unsupported_cell_types']:
+        issues.append("Cell types not detected in this sample (sentences removed): "
+                      + ", ".join(t.replace('_', ' ') for t in review['unsupported_cell_types']))
+    for c in review['pubmed']:
+        if c['status'] == 'verified':
+            st.success(f"Citation confirmed in PubMed: {c['text']} → PMID {c['pmid']} ({c.get('title') or ''})")
+        elif c['status'] == 'unchecked':
+            issues.append(f"Citation not checked (PubMed unavailable): {c['text']}")
+        else:
+            issues.append(f"Citation not found in PubMed as written ({c['status']}), sentence removed: {c['text']}")
+    for msg in issues:
+        st.warning(msg)
+    if not issues and not review['pubmed']:
+        st.info("No citations, and every number and cell type in the report appears in the input.")
+    if review['clean_text'] != raw_report:
+        with st.expander("Original model output (before removing ungrounded sentences)"):
+            st.markdown(raw_report)
+
+
 def generate_report(adata, features, use_multimodal):
     """Generate the MedGemma report on demand and keep it across reruns."""
     st.header("📝 Pathology Report")
     st.caption(DISCLAIMER)
+
+    verify = st.checkbox(
+        "Verify citations against PubMed", value=True,
+        help="Looks up any 'Author et al. (Journal, Year)' in PubMed and removes sentences "
+             "citing papers that cannot be confirmed. Needs internet; skipped when offline.")
 
     if st.button("🧠 Generate report with MedGemma"):
         with st.spinner("Loading MedGemma (first run downloads ~8.6 GB) and generating..."):
@@ -296,6 +328,7 @@ def generate_report(adata, features, use_multimodal):
                 report, metadata = _run_model(adata, features, use_multimodal)
                 metadata['elapsed_s'] = round(time.time() - start_time, 1)
                 st.session_state['report'] = (report, metadata)
+                st.session_state['review'] = review_report(report, metadata.get('prompt', ''), verify)
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
                 import traceback
@@ -305,10 +338,13 @@ def generate_report(adata, features, use_multimodal):
     if 'report' not in st.session_state:
         return False
 
-    report, metadata = st.session_state['report']
+    raw_report, metadata = st.session_state['report']
+    review = st.session_state.get('review') or review_report(raw_report, metadata.get('prompt', ''), False)
+    report = review['clean_text']
     st.success(f"✓ Report generated in {metadata.get('elapsed_s', 0):.1f}s")
     st.markdown("### Generated Report")
     st.markdown(report)
+    show_grounding_review(review, raw_report)
 
     with st.expander("📋 Report Metadata"):
         st.json(safe_json(metadata))

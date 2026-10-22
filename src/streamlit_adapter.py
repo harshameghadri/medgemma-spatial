@@ -55,7 +55,7 @@ COMPARTMENT_MARKERS = {
     'Hepatocyte':        ['ALB', 'APOA1', 'APOB', 'CYP3A4', 'HP'],
 }
 PAN_IMMUNE_GENES = ['PTPRC', 'CD3D', 'CD19', 'MS4A1', 'CD14', 'CSF1R', 'NKG7', 'JCHAIN']
-CELLTYPIST_NON_IMMUNE = {'Epithelial cells', 'Endothelial cells', 'Unassigned'}
+CELLTYPIST_NON_IMMUNE = {'Epithelial_cells', 'Endothelial_cells', 'Unassigned'}
 
 
 def _safe_float(value, default=None):
@@ -192,7 +192,7 @@ def refine_immune_with_celltypist(adata, labels, confidence, errors):
         errors.append(f"CellTypist immune refinement skipped: {e}")
         return labels, confidence
 
-    ct_labels = pred.predicted_labels['predicted_labels'].values.astype(str)
+    ct_labels = np.char.replace(pred.predicted_labels['predicted_labels'].values.astype(str), ' ', '_')
     ct_probs = pred.probability_matrix.max(axis=1).values
     accept = np.array([lab not in CELLTYPIST_NON_IMMUNE for lab in ct_labels]) & (ct_probs > 0.4)
     idx = np.where(immune_mask)[0][accept]
@@ -222,8 +222,10 @@ def annotate_spatial_regions(adata, resolution=0.5, use_markers=True, tissue="Un
             method = 'marker_zscore'
             if use_celltypist:
                 try:
+                    n_errors = len(errors)
                     labels, confidence = refine_immune_with_celltypist(adata, labels, confidence, errors)
-                    method = 'marker_zscore+celltypist'
+                    if len(errors) == n_errors:
+                        method = 'marker_zscore+celltypist'
                 except ImportError as e:
                     errors.append(f"CellTypist unavailable: {e}")
             adata.obs['cell_type'] = pd.Categorical(labels)

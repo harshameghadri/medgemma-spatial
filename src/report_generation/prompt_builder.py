@@ -10,11 +10,14 @@ import os
 import re
 from typing import Dict, Optional
 
+from src.report_generation.faithfulness import label_lineage
+
 IMMUNE_TERMS = (
     't cell', 'b cell', 'nk cell', 'ilc', 'macrophage', 'monocyte', 'plasma',
     'dendritic', 'dc', 'neutrophil', 'mast', 'granulocyte', 'lymphocyte',
     'treg', 'tcm', 'tem', 'mait', 'pdc', 'immune',
 )
+REPORT_WORDS = (170, 230)
 STROMAL_TERMS = ('stromal', 'caf', 'fibroblast', 'myofibroblast', 'pericyte')
 
 
@@ -61,6 +64,18 @@ def _metric(features: Dict, section: str, key: str) -> Optional[float]:
 
 def _fmt(value: Optional[float], spec: str = '.2f') -> str:
     return 'not available' if value is None else format(value, spec)
+
+
+def cell_type_list(features: Dict) -> str:
+    """Detected cell-type names by abundance, without counts."""
+    counts = features.get('annotation', {}).get('cell_type_counts') or {}
+    names = []
+    for k, v in sorted(counts.items(), key=lambda kv: -kv[1]):
+        if k == 'Unknown' or v <= 0:
+            continue
+        lineage = label_lineage(str(k))
+        names.append(f"{str(k).replace('_', ' ')} ({lineage})" if lineage else str(k).replace('_', ' '))
+    return ', '.join(names) if names else 'not available'
 
 
 def load_features_json(json_path: str) -> Dict:
@@ -118,28 +133,30 @@ def generate_medgemma_prompt(features: Dict, moa_focus: bool = True) -> str:
 
 SPATIAL TRANSCRIPTOMICS DATA SUMMARY:
 - Tissue phenotype: {phenotype_hint}
+- Cell types detected (most to least abundant): {cell_type_list(features)}
 - Major compartments: {len(major_populations)} populations (>{10}% of tissue)
 - Immune diversity: {len(immune_cells)} distinct immune populations
 - Spatial autocorrelation (Moran's I): {morans_desc} ({_fmt(morans_i)})
 - Neighbourhood entropy: {entropy_desc} ({_fmt(entropy)})
 - Spatially co-enriched cell-type pairs: {'not available' if n_enriched_pairs is None else n_enriched_pairs}
+- Annotation confidence: mean {_fmt(_metric(features, 'annotation', 'mean_confidence'))}; prediction entropy {_fmt(_metric(features, 'uncertainty', 'mean_prediction_entropy'))}
 
-Generate a 280-320 word expert pathology report structured as follows:
+Generate a {REPORT_WORDS[0]}-{REPORT_WORDS[1]} word expert pathology report with these four sections:
 
-1. TISSUE MICROENVIRONMENT (2-3 sentences): Describe the dominant spatial architecture and cellular organisation.
+**TISSUE MICROENVIRONMENT** (2-3 sentences): Describe the dominant spatial architecture and cellular organisation.
 
-2. MECHANISM OF ACTION (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism (e.g., TGF-β-mediated exclusion, IFN-γ/CXCL9 chemokine gradient, VEGF-driven angiogenic niche). Explain how spatial co-localisation or exclusion patterns support this mechanism.
+**MECHANISM OF ACTION** (3-4 sentences): Identify the key biological mechanism driving the observed pattern. Name the specific signalling pathway, ligand-receptor axis, or cellular crosstalk mechanism that best fits this sample. Explain how spatial co-localisation or exclusion patterns support this mechanism.
 
-3. RESEARCH CONTEXT (1-2 sentences): Relate the pattern to established biology. Name a specific study only if you are certain of author, journal and year; never invent a reference.
+**THERAPEUTIC IMPLICATIONS** (2-3 sentences): Recommend a specific evidence-based therapeutic strategy or combination (name drug class or agent where possible). State the biological rationale for this approach.
 
-4. THERAPEUTIC IMPLICATIONS (2-3 sentences): Recommend a specific evidence-based therapeutic strategy or combination (name drug class or agent where possible). State the biological rationale for this approach.
-
-5. VALIDATION CAVEATS (1 sentence): Note measurement limitations and suggest a targeted validation assay (IHC, flow cytometry, etc.).
+**VALIDATION CAVEATS** (1-2 sentences): Note measurement limitations and suggest a targeted validation assay (IHC, flow cytometry, etc.).
 
 CRITICAL RULES:
-- DO NOT list raw cell counts or exact metric values
+- Discuss only the cell types listed above
+- Do not cite specific studies, authors, journals or years
+- Do not state cell counts, percentages or any number not given above
 - SYNTHESISE mechanisms — do not enumerate observations
-- Every claim must follow logically from the spatial pattern described
+- Write in your own words; do not reuse phrases from these instructions
 
 Report:"""
 

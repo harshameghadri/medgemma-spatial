@@ -17,8 +17,9 @@ FEATURES = {
 
 def test_prompt_does_not_request_fabricated_citations():
     prompt = generate_medgemma_prompt(FEATURES)
-    assert "never invent a reference" in prompt
+    assert "Do not cite specific studies" in prompt
     assert "cite author surname" not in prompt
+    assert "T cells, CAF generic" in prompt
 
 
 def test_multimodal_prompt_tolerates_missing_metrics():

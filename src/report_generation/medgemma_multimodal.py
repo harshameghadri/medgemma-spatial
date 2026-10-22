@@ -109,61 +109,14 @@ def preprocess_for_medgemma(
 
 
 def create_multimodal_prompt(features: Dict) -> str:
-    """
-    Create prompt for multimodal MedGemma combining H&E image + spatial features.
+    """Text-only report prompt (the one the LoRA adapter trains on) plus an instruction to use the H&E image."""
+    from src.report_generation.prompt_builder import generate_medgemma_prompt
 
-    Uses anti-parroting strategy: exposes aggregated metrics only.
-
-    Parameters
-    ----------
-    features : dict
-        Spatial transcriptomics features (from uncertainty_spatial_analysis.py)
-
-    Returns
-    -------
-    str
-        Prompt for MedGemma multimodal input
-    """
-    from src.report_generation.prompt_builder import _fmt, _metric, summarise_composition
-
-    comp = summarise_composition(features)
-    n_spots = comp['n_spots']
-    major_populations = comp['major_populations']
-    immune_types = comp['immune_cells']
-    morans_i = _metric(features, 'spatial_heterogeneity', 'morans_i_mean')
-    pred_entropy = _metric(features, 'uncertainty', 'mean_prediction_entropy')
-    has_spatial_het = morans_i is not None and morans_i > 0.3
-
-    prompt = f"""You are a computational pathologist analyzing spatial transcriptomics data with corresponding H&E histology.
-
-AVAILABLE INFORMATION:
-
-H&E IMAGE:
-- High-resolution tissue section provided above
-- Use morphological features to interpret spatial patterns
-
-MOLECULAR DATA:
-- Total tissue spots: {n_spots}
-- Major cell populations (>10% abundance): {len(major_populations)} types
-- Immune cell diversity: {len(immune_types)} distinct immune populations
-- Spatial organization: {'heterogeneous' if has_spatial_het else 'uniform'} (Moran's I = {_fmt(morans_i, '.3f')})
-- Annotation uncertainty (entropy): {_fmt(pred_entropy, '.3f')}
-
-TASK:
-Generate a 200-word clinical pathology report that:
-1. Describes tissue morphology visible in the H&E image
-2. Correlates morphological findings with molecular spatial patterns
-3. Interprets biological significance of spatial organization
-4. Provides clinical context
-
-CRITICAL:
-- DO NOT repeat exact numbers from the data
-- SYNTHESIZE insights from both image and molecular data
-- Focus on biological interpretation, not data enumeration
-
-Report:"""
-
-    return prompt
+    prompt = generate_medgemma_prompt(features)
+    return prompt.replace(
+        "SPATIAL TRANSCRIPTOMICS DATA SUMMARY:",
+        "H&E IMAGE: the tissue section above. Describe only morphology you can see in it; "
+        "if it is unclear, say so rather than guess.\n\nSPATIAL TRANSCRIPTOMICS DATA SUMMARY:", 1)
 
 
 def pick_device(device: Optional[str] = None) -> str:
@@ -227,7 +180,9 @@ def generate_from_messages(messages, model_id: str = DEFAULT_MODEL_ID, device: O
     input_len = inputs["input_ids"].shape[-1]
     with torch.inference_mode():
         output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    return processor.decode(output[0][input_len:], skip_special_tokens=True).strip()
+    from src.report_generation.faithfulness import normalise_headings, strip_thinking
+
+    return normalise_headings(strip_thinking(processor.decode(output[0][input_len:], skip_special_tokens=True)))
 
 
 def _system_message():
@@ -245,11 +200,12 @@ def generate_multimodal_report(
 ) -> Tuple[str, Dict]:
     """Report from the H&E image in adata.uns['spatial'] plus spatial features."""
     image = preprocess_for_medgemma(load_hires_image_from_adata(adata, library_id=library_id))
+    prompt = create_multimodal_prompt(features)
     messages = [
         _system_message(),
         {"role": "user", "content": [
             {"type": "image", "image": image},
-            {"type": "text", "text": create_multimodal_prompt(features)},
+            {"type": "text", "text": prompt},
         ]},
     ]
     report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
@@ -260,6 +216,7 @@ def generate_multimodal_report(
         "device": pick_device(device),
         "image_size": list(image.size),
         "report_length": len(report),
+        "prompt": prompt,
     }
     return report, metadata
 
@@ -274,9 +231,10 @@ def generate_textonly_fallback(
     """Report from spatial features only, using the same prompt the LoRA adapter trains on."""
     from src.report_generation.prompt_builder import generate_medgemma_prompt
 
+    prompt = generate_medgemma_prompt(features)
     messages = [
         _system_message(),
-        {"role": "user", "content": [{"type": "text", "text": generate_medgemma_prompt(features)}]},
+        {"role": "user", "content": [{"type": "text", "text": prompt}]},
     ]
     report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
     metadata = {
@@ -285,5 +243,6 @@ def generate_textonly_fallback(
         "adapter_id": adapter_id or os.environ.get("MEDGEMMA_ADAPTER"),
         "device": pick_device(device),
         "report_length": len(report),
+        "prompt": prompt,
     }
     return report, metadata

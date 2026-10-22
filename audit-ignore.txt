@@ -1,0 +1,4 @@
+# pip-audit advisories accepted on requirements.txt, one ID per line, with reason.
+# Remove each entry once the fix version can be locked.
+#
+# Empty: the Pillow < 13 entries were dropped when streamlit 1.66.1 allowed Pillow 13.0.0 (2026-10-22).
