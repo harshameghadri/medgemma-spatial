@@ -1,0 +1,24 @@
+axis	ligand	receptor	sender	receiver	effect	therapy	context
+PD-L1–PD-1	CD274	PDCD1	epithelial,macrophage,dendritic_cell,fibroblast	t_cell,nk_cell	inhibits the T or NK cell (exhaustion, less killing)	anti-PD-1 or anti-PD-L1	immune
+CD80/CD86–CTLA-4	CD80	CTLA4	dendritic_cell,macrophage,b_cell	t_cell	inhibits T-cell priming by outcompeting CD28	anti-CTLA-4	immune
+CD80/CD86–CD28	CD80	CD28	dendritic_cell,macrophage,b_cell	t_cell	co-stimulates T-cell priming	none	tls
+CD47–SIRPα	CD47	SIRPA	epithelial	macrophage,dendritic_cell	inhibits phagocytosis (don't-eat-me signal)	anti-CD47 or anti-SIRPα	myeloid
+CD40L–CD40	CD40LG	CD40	t_cell	dendritic_cell,b_cell,macrophage	activates antigen-presenting cells	CD40 agonist	tls,myeloid
+CSF1–CSF1R	CSF1	CSF1R	epithelial,fibroblast	macrophage	sustains macrophage survival and differentiation	CSF1R inhibitor	myeloid
+CCL2–CCR2	CCL2	CCR2	epithelial,fibroblast	macrophage	recruits monocyte-derived macrophages	CCR2 antagonist	myeloid
+CXCL8–CXCR2	CXCL8	CXCR2	epithelial,macrophage	neutrophil	recruits neutrophils	CXCR2 antagonist	myeloid
+IL-10–IL-10R	IL10	IL10RA	macrophage	t_cell,dendritic_cell	suppresses T-cell and dendritic-cell function	none approved	myeloid
+TGF-β–TGFBR	TGFB1	TGFBR2	fibroblast,macrophage	t_cell,fibroblast	suppresses T cells; activates CAFs and matrix deposition	TGF-β pathway inhibitor	stromal,desert
+CXCL12–CXCR4	CXCL12	CXCR4	fibroblast	t_cell	holds T cells in stroma, away from tumour cells	CXCR4 antagonist	stromal,desert
+PDGF-B–PDGFRβ	PDGFB	PDGFRB	endothelial,epithelial	fibroblast	recruits and activates CAFs and pericytes	PDGFR inhibitor	stromal
+VEGF-A–VEGFR2	VEGFA	KDR	epithelial,macrophage	endothelial	drives abnormal angiogenesis that limits T-cell entry	anti-VEGF	stromal,desert
+IL-6–IL-6R	IL6	IL6R	fibroblast,macrophage	epithelial	STAT3 signalling: tumour-cell survival and inflammation	anti-IL-6R (investigational)	stromal
+CXCL9/CXCL10–CXCR3	CXCL9	CXCR3	macrophage,dendritic_cell	t_cell,nk_cell	recruits effector T and NK cells	none (marks checkpoint response)	immune
+IFN-γ–IFNGR	IFNG	IFNGR1	t_cell,nk_cell	epithelial,macrophage	raises antigen presentation and PD-L1 on the receiving cell	none (marks checkpoint response)	immune
+MICA/B–NKG2D	MICA	KLRK1	epithelial	nk_cell,t_cell	activates NK and CD8 T-cell killing	none approved	immune
+HLA-E–NKG2A	HLA-E	KLRC1	epithelial	nk_cell,t_cell	inhibits NK and CD8 T-cell killing	anti-NKG2A	immune
+Galectin-9–TIM-3	LGALS9	HAVCR2	epithelial,macrophage	t_cell	inhibits T cells	anti-TIM-3	immune
+PVR–TIGIT	PVR	TIGIT	epithelial,dendritic_cell	t_cell,nk_cell	inhibits T and NK cells	anti-TIGIT	immune
+CXCL13–CXCR5	CXCL13	CXCR5	fibroblast,t_cell	b_cell	recruits B cells into tertiary lymphoid structures	none (marks checkpoint response)	tls
+CCL19/CCL21–CCR7	CCL21	CCR7	fibroblast,endothelial	t_cell,dendritic_cell	recruits T cells and dendritic cells into lymphoid aggregates	none	tls
+LTβ–LTβR	LTB	LTBR	b_cell,t_cell	fibroblast,endothelial	organises stroma and high endothelial venules in lymphoid aggregates	none	tls
