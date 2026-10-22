@@ -157,8 +157,6 @@ hf-xet==1.7.0
     # via huggingface-hub
 httpcore2==2.15.1
     # via httpx2
-httptools==0.9.0
-    # via streamlit
 httpx2==2.15.1
     # via huggingface-hub
 huggingface-hub==2.2.0
@@ -405,7 +403,7 @@ patsy==1.0.3
     #   statsmodels
 peft==0.21.2
     # via -r requirements.in
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   -r requirements.in
     #   imageio
@@ -598,7 +596,7 @@ statsmodels==0.15.0
     # via
     #   scanpy
     #   squidpy
-streamlit==1.65.0
+streamlit==1.66.1
     # via -r requirements.in
 sympy==1.14.0
     # via torch
@@ -616,8 +614,6 @@ tifffile==2025.5.10
     #   squidpy
 tokenizers==0.23.3
     # via transformers
-toml==0.10.2
-    # via streamlit
 toolz==1.2.0
     # via
     #   dask
