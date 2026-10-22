@@ -6,9 +6,9 @@ CD47–SIRPα	CD47	SIRPA	epithelial	macrophage,dendritic_cell	inhibits phagocyto
 CD40L–CD40	CD40LG	CD40	t_cell	dendritic_cell,b_cell,macrophage	activates antigen-presenting cells	CD40 agonist	tls,myeloid
 CSF1–CSF1R	CSF1	CSF1R	epithelial,fibroblast	macrophage	sustains macrophage survival and differentiation	CSF1R inhibitor	myeloid
 CCL2–CCR2	CCL2	CCR2	epithelial,fibroblast	macrophage	recruits monocyte-derived macrophages	CCR2 antagonist	myeloid
-CXCL8–CXCR2	CXCL8	CXCR2	epithelial,macrophage	neutrophil	recruits neutrophils	CXCR2 antagonist	myeloid
+CXCL8–CXCR2	CXCL8	CXCR2	epithelial,macrophage,fibroblast	neutrophil	recruits neutrophils	CXCR2 antagonist	myeloid
 IL-10–IL-10R	IL10	IL10RA	macrophage	t_cell,dendritic_cell	suppresses T-cell and dendritic-cell function	none approved	myeloid
-TGF-β–TGFBR	TGFB1	TGFBR2	fibroblast,macrophage	t_cell,fibroblast	suppresses T cells; activates CAFs and matrix deposition	TGF-β pathway inhibitor	stromal,desert
+TGF-β–TGFBR	TGFB1	TGFBR2	epithelial,fibroblast,macrophage	t_cell,fibroblast	suppresses T cells; activates CAFs and matrix deposition	TGF-β pathway inhibitor	stromal,desert
 CXCL12–CXCR4	CXCL12	CXCR4	fibroblast	t_cell	holds T cells in stroma, away from tumour cells	CXCR4 antagonist	stromal,desert
 PDGF-B–PDGFRβ	PDGFB	PDGFRB	endothelial,epithelial	fibroblast	recruits and activates CAFs and pericytes	PDGFR inhibitor	stromal
 VEGF-A–VEGFR2	VEGFA	KDR	epithelial,macrophage	endothelial	drives abnormal angiogenesis that limits T-cell entry	anti-VEGF	stromal,desert
