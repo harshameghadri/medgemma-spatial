@@ -577,7 +577,7 @@ scikit-learn==1.7.2
     #   spatialdata-plot
     #   squidpy
     #   umap-learn
-scipy==1.15.3
+scipy==1.18.1
     # via
     #   -r requirements.in
     #   anndata
