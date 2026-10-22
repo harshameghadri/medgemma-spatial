@@ -1,17 +1,27 @@
-#!/usr/bin/env python3
 """
-MedGemma Multimodal Report Generation with H&E Images.
+MedGemma report generation (text-only or H&E image + spatial features).
 
-Integrates spatial transcriptomics features with H&E tissue images for
-comprehensive pathology reports using MedGemma 1.5 multimodal capabilities.
+Loads ``google/medgemma-4b-it`` (a Gemma 3 image-text-to-text checkpoint) with
+its processor and chat template. Device and dtype are chosen for the hardware:
+CUDA uses bfloat16 (or 4-bit NF4 when ``quantize_4bit=True`` and bitsandbytes
+is installed); Apple MPS and CPU use bfloat16 unquantised (~8.6 GB of weights).
+An optional LoRA adapter is applied when ``MEDGEMMA_ADAPTER`` (or ``adapter_id``)
+names a PEFT repo or directory.
 """
 
+import functools
 import os
-from PIL import Image
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-import torch
-import numpy as np
 from typing import Dict, Optional, Tuple
+
+import numpy as np
+from PIL import Image
+
+DEFAULT_MODEL_ID = os.environ.get("MEDGEMMA_MODEL_ID", "google/medgemma-4b-it")
+SYSTEM_PROMPT = (
+    "You are an expert computational pathologist. Interpret spatial transcriptomics "
+    "summaries for research purposes. Do not invent citations; if you mention prior "
+    "work, describe it generically unless you are certain of the reference."
+)
 
 
 def load_hires_image_from_adata(adata, library_id: Optional[str] = None) -> Image.Image:
@@ -48,13 +58,13 @@ def load_hires_image_from_adata(adata, library_id: Optional[str] = None) -> Imag
         available = list(adata.uns['spatial'][library_id]['images'].keys())
         raise KeyError(f"'hires' image not found. Available: {available}") from e
 
-    if img_array.dtype == np.float64 or img_array.dtype == np.float32:
-        img_array = (img_array * 255).astype(np.uint8)
+    if np.issubdtype(img_array.dtype, np.floating):
+        img_array = (np.clip(img_array, 0, 1) * 255).astype(np.uint8)
 
     if img_array.ndim == 2:
         img_array = np.stack([img_array] * 3, axis=-1)
 
-    image = Image.fromarray(img_array)
+    image = Image.fromarray(img_array).convert('RGB')
     print(f"  Loaded image: {image.size} pixels, mode: {image.mode}")
 
     return image
@@ -156,201 +166,124 @@ Report:"""
     return prompt
 
 
+def pick_device(device: Optional[str] = None) -> str:
+    """Resolve 'auto'/None to cuda, mps or cpu."""
+    import torch
+
+    if device and device != "auto":
+        return device
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
+@functools.lru_cache(maxsize=2)
+def load_medgemma(model_id: str = DEFAULT_MODEL_ID, device: Optional[str] = None,
+                  adapter_id: Optional[str] = None, quantize_4bit: bool = False):
+    """Load (processor, model) once per process; cached across calls."""
+    import torch
+    from transformers import AutoModelForImageTextToText, AutoProcessor
+
+    device = pick_device(device)
+    token = os.environ.get("HF_TOKEN")
+    kwargs = {"dtype": torch.bfloat16, "token": token, "low_cpu_mem_usage": True}
+
+    if quantize_4bit and device == "cuda":
+        from transformers import BitsAndBytesConfig
+
+        kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.bfloat16,
+        )
+        kwargs["device_map"] = "auto"
+
+    processor = AutoProcessor.from_pretrained(model_id, token=token)
+    model = AutoModelForImageTextToText.from_pretrained(model_id, **kwargs)
+    if "device_map" not in kwargs:
+        model = model.to(device)
+
+    adapter_id = adapter_id or os.environ.get("MEDGEMMA_ADAPTER") or None
+    if adapter_id:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, adapter_id, token=token)
+    model.eval()
+    return processor, model
+
+
+def generate_from_messages(messages, model_id: str = DEFAULT_MODEL_ID, device: Optional[str] = None,
+                           max_new_tokens: int = 400, adapter_id: Optional[str] = None) -> str:
+    """Apply the chat template, generate greedily and decode only the new tokens."""
+    import torch
+
+    processor, model = load_medgemma(model_id, device, adapter_id)
+    inputs = processor.apply_chat_template(
+        messages, add_generation_prompt=True, tokenize=True,
+        return_dict=True, return_tensors="pt",
+    ).to(model.device, dtype=model.dtype)
+    input_len = inputs["input_ids"].shape[-1]
+    with torch.inference_mode():
+        output = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    return processor.decode(output[0][input_len:], skip_special_tokens=True).strip()
+
+
+def _system_message():
+    return {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]}
+
+
 def generate_multimodal_report(
     adata,
     features: Dict,
-    model_id: str = "google/medgemma-4b-it",
-    device: str = "cpu",
+    model_id: str = DEFAULT_MODEL_ID,
+    device: Optional[str] = None,
     max_new_tokens: int = 400,
-    library_id: Optional[str] = None
+    library_id: Optional[str] = None,
+    adapter_id: Optional[str] = None,
 ) -> Tuple[str, Dict]:
-    """
-    Generate pathology report using BOTH H&E image and spatial features.
-
-    Parameters
-    ----------
-    adata : AnnData
-        Annotated data with spatial images in adata.uns['spatial']
-    features : dict
-        Spatial transcriptomics features
-    model_id : str, default="google/medgemma-1.5-4b-it"
-        HuggingFace model identifier
-    device : str, default="cpu"
-        Device for inference ('cpu', 'cuda', or 'mps')
-    max_new_tokens : int, default=500
-        Maximum tokens to generate
-    library_id : str, optional
-        Library ID for spatial data
-
-    Returns
-    -------
-    tuple of (str, dict)
-        Generated report and metadata
-
-    Raises
-    ------
-    ImportError
-        If transformers or PIL not available
-    RuntimeError
-        If model fails to load or generate
-    """
-    print("\n[MULTIMODAL REPORT GENERATION]")
-    print("="*80)
-
-    print("\n[1/5] Loading H&E image from AnnData...")
-    try:
-        he_image = load_hires_image_from_adata(adata, library_id=library_id)
-    except Exception as e:
-        print(f"  ✗ Failed to load image: {e}")
-        raise
-
-    print("\n[2/5] Preprocessing image for MedGemma...")
-    he_image_processed = preprocess_for_medgemma(he_image, target_size=896)
-    print(f"  ✓ Resized to: {he_image_processed.size}")
-
-    print("\n[3/5] Creating multimodal prompt...")
-    prompt = create_multimodal_prompt(features)
-    print(f"  ✓ Prompt length: {len(prompt)} characters")
-
-    hf_token = os.environ.get('HF_TOKEN')
-    print(f"\n[4/5] Loading MedGemma multimodal model ({model_id})...")
-    try:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_quant_type="nf4",
-        )
-        pipe = pipeline(
-            "image-text-to-text",
-            model=model_id,
-            model_kwargs={"quantization_config": bnb_config, "low_cpu_mem_usage": True},
-            token=hf_token,
-            device_map="auto",
-        )
-        print("  ✓ Model loaded (4-bit quantized)")
-    except Exception as e:
-        print(f"  ✗ Model loading failed: {e}")
-        print("\nTROUBLESHOOTING:")
-        print("  1. Ensure HF_TOKEN is set in Space secrets")
-        print("  2. Ensure transformers>=4.45.0 and bitsandbytes>=0.41.0 installed")
-        raise
-
-    print("\n[5/5] Generating multimodal report...")
-    messages = [{
-        "role": "user",
-        "content": [
-            {"type": "image", "image": he_image_processed},
-            {"type": "text", "text": prompt}
-        ]
-    }]
-
-    try:
-        output = pipe(text=messages, max_new_tokens=max_new_tokens)
-        report = output[0]['generated_text']
-        print(f"  ✓ Generated {len(report)} characters")
-    except Exception as e:
-        print(f"  ✗ Generation failed: {e}")
-        raise
-
+    """Report from the H&E image in adata.uns['spatial'] plus spatial features."""
+    image = preprocess_for_medgemma(load_hires_image_from_adata(adata, library_id=library_id))
+    messages = [
+        _system_message(),
+        {"role": "user", "content": [
+            {"type": "image", "image": image},
+            {"type": "text", "text": create_multimodal_prompt(features)},
+        ]},
+    ]
+    report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
     metadata = {
-        'mode': 'multimodal',
-        'model_id': model_id,
-        'device': device,
-        'image_size': he_image_processed.size,
-        'report_length': len(report)
+        "mode": "multimodal",
+        "model_id": model_id,
+        "adapter_id": adapter_id or os.environ.get("MEDGEMMA_ADAPTER"),
+        "device": pick_device(device),
+        "image_size": list(image.size),
+        "report_length": len(report),
     }
-
-    print("\n" + "="*80)
-    print("[MULTIMODAL REPORT COMPLETE]")
-
     return report, metadata
 
 
 def generate_textonly_fallback(
     features: Dict,
-    model_id: str = "google/medgemma-4b-it",
-    device: str = "cpu",
-    max_new_tokens: int = 400
+    model_id: str = DEFAULT_MODEL_ID,
+    device: Optional[str] = None,
+    max_new_tokens: int = 400,
+    adapter_id: Optional[str] = None,
 ) -> Tuple[str, Dict]:
-    """
-    Text-only report generation using 4-bit quantized MedGemma.
+    """Report from spatial features only, using the same prompt the LoRA adapter trains on."""
+    from src.report_generation.prompt_builder import generate_medgemma_prompt
 
-    Parameters
-    ----------
-    features : dict
-        Spatial transcriptomics features
-    model_id : str
-        Text-only model ID
-    device : str
-        Unused (quantized model uses device_map=auto)
-    max_new_tokens : int
-        Maximum tokens to generate
-
-    Returns
-    -------
-    tuple of (str, dict)
-        Generated report and metadata
-    """
-    print("\n[TEXT-ONLY REPORT GENERATION]")
-    print("="*80)
-
-    hf_token = os.environ.get('HF_TOKEN')
-    print(f"\n[1/3] Loading {model_id} (4-bit quantized)...")
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.float16,
-        bnb_4bit_quant_type="nf4",
-    )
-    tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        quantization_config=bnb_config,
-        device_map="auto",
-        token=hf_token,
-        low_cpu_mem_usage=True
-    )
-    print("  ✓ Model loaded")
-
-    print("\n[2/3] Creating text-only prompt...")
-    prompt = create_multimodal_prompt(features)
-    prompt = prompt.replace("H&E IMAGE:\n- High-resolution tissue section provided above\n- Use morphological features to interpret spatial patterns\n\n", "")
-    print("  ✓ Prompt ready")
-
-    print("\n[3/3] Generating report...")
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=max_new_tokens,
-        do_sample=False,
-        pad_token_id=tokenizer.eos_token_id
-    )
-
-    full_output = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    report = full_output[len(prompt):].strip()
-    print(f"  ✓ Generated {len(report)} characters")
-
+    messages = [
+        _system_message(),
+        {"role": "user", "content": [{"type": "text", "text": generate_medgemma_prompt(features)}]},
+    ]
+    report = generate_from_messages(messages, model_id, device, max_new_tokens, adapter_id)
     metadata = {
-        'mode': 'text_only_fallback',
-        'model_id': model_id,
-        'device': device,
-        'report_length': len(report)
+        "mode": "text_only",
+        "model_id": model_id,
+        "adapter_id": adapter_id or os.environ.get("MEDGEMMA_ADAPTER"),
+        "device": pick_device(device),
+        "report_length": len(report),
     }
-
-    print("\n" + "="*80)
-
     return report, metadata
-
-
-if __name__ == "__main__":
-    print("MedGemma Multimodal Module - Test")
-    print("="*80)
-    print("\nUsage:")
-    print("  from src.report_generation.medgemma_multimodal import generate_multimodal_report")
-    print("  report, meta = generate_multimodal_report(adata, features)")
-    print("\nRequirements:")
-    print("  - transformers>=4.45.0")
-    print("  - PIL (pillow)")
-    print("  - torch>=2.4.0")
-    print("  - MedGemma 1.5 model access on HuggingFace")
-    print("\nFor testing:")
-    print("  python scripts/test_multimodal_report.py --h5ad <path>")

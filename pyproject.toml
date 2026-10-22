@@ -74,6 +74,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
     "slow: runs the full spatial pipeline on a synthetic tissue (~1 min)",
+    "network: downloads a ~47 MB tiny Gemma 3 test checkpoint from the HF Hub",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
