@@ -12,8 +12,6 @@ report is wrong.
 
 ## What it does
 
-![Pipeline](docs/figures/pipeline.png)
-
 ```
 10x Visium / Visium HD (Space Ranger output or .h5ad)
   → Scanpy + Squidpy: QC, cell-type annotation, Moran's I, neighbourhood entropy, co-enrichment
@@ -52,8 +50,6 @@ trusted, and what actually moves that number. Every step is logged with its evid
    OmniPath, sender → receiver and effect on the receiving cell, signed off by the reviewer) worked.
 
 ### Round 2 results (MedGemma 4B, 31 held-out prompts; blinded read on 7)
-
-![Results](docs/figures/results.png)
 
 | Prompt | Biology-check flags | Mechanism terms (own words) | Copied from inserted text | Blinded read: errors | Generic |
 |---|---|---|---|---|---|

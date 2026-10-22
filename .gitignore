@@ -193,3 +193,8 @@ extract_nb_text.py
 notebook_summaries.txt
 outputs_summary.txt
 refactor_*.py
+
+# Article figures and the scripts that render them (kept local)
+docs/figures/
+scripts/make_results_figure.py
+scripts/make_table_figures.py
