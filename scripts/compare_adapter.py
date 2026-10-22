@@ -21,6 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+from src.report_generation.biology_check import check_report  # noqa: E402
 from src.report_generation.faithfulness import HEADING, WORD, normalise_headings, score_report, strip_thinking  # noqa: E402
 from src.report_generation.prompt_builder import REPORT_WORDS, evaluate_report_quality  # noqa: E402
 
@@ -39,8 +40,9 @@ REPORTED = (
 )
 
 
-def score(text: str, prompt: str, pubmed=None) -> dict:
+def score(text: str, prompt: str, pubmed=None, pattern=None) -> dict:
     rec = score_report(text, prompt)
+    rec["biology_flags"] = [f"{f['check']}: {f['detail']}" for f in check_report(text, prompt, pattern)]
     rec["moa_hits"] = evaluate_report_quality(text, {})["moa_hits"]
     rec["sections_normalised"] = score_report(normalise_headings(text), prompt)["sections"]
     rec["moa_novel"] = evaluate_report_quality(own_words(text, rec["copied_spans"]), {})["moa_hits"]
@@ -75,6 +77,7 @@ def summarise(results: list, name: str) -> dict:
         "unsupported_numbers": sum(len(r["unsupported_numbers"]) for r in recs),
         "reports_with_unsupported_number": sum(bool(r["unsupported_numbers"]) for r in recs),
         "unsupported_cell_types": sum(len(r["unsupported_cell_types"]) for r in recs),
+        "biology_flagged_reports": sum(bool(r.get("biology_flags")) for r in recs),
         "pubmed_verified": sum(c["status"] == "verified" for r in recs for c in r.get("pubmed", [])),
         "pubmed_unverified": sum(c["status"] != "verified" for r in recs for c in r.get("pubmed", [])),
     }
@@ -206,7 +209,7 @@ def main(argv=None):
         rec = {"pattern": row.get("pattern"), "reference": row["completion"][0]["content"]}
         generated = {k: (v, None) for k, v in texts[i].items()} if gen is None else gen(row)
         for name, (text, secs) in generated.items():
-            rec[name] = {"text": text, "seconds": secs, **score(text, prompt, pubmed)}
+            rec[name] = {"text": text, "seconds": secs, **score(text, prompt, pubmed, row.get("pattern"))}
             r = rec[name]
             print(f"[{i}] {str(row.get('pattern')):<20} {name:<7} words={r['words']:<4} "
                   f"sections={len(r['sections'])} moa={r['moa_hits']} cites={r['citation_sentences']} "
