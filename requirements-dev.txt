@@ -1,5 +1,5 @@
 # Test and lint tooling (install on top of requirements.txt or requirements.in).
-pytest==8.4.2
+pytest==9.1.1
 ruff==0.17.1
 nbformat==5.10.4
 pip-audit==2.9.0
