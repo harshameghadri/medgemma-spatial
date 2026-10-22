@@ -4,7 +4,6 @@ Parallel processing pipeline for MedGemma spatial analysis.
 Handles multiple obfuscated samples with optimal resource utilization.
 """
 
-import os
 import sys
 import json
 import torch
@@ -235,7 +234,7 @@ def process_single_sample(
 
         from uncertainty_spatial_analysis import run_uncertainty_aware_spatial_analysis
 
-        uncertainty_results = run_uncertainty_aware_spatial_analysis(
+        run_uncertainty_aware_spatial_analysis(
             adata_path=h5ad_path,
             output_path=str(features_output)
         )
@@ -251,7 +250,7 @@ def process_single_sample(
 
             from medgemma_v2_pipeline import run_medgemma_v2_pipeline
 
-            report = run_medgemma_v2_pipeline(
+            run_medgemma_v2_pipeline(
                 uncertainty_features_path=str(features_output),
                 output_path=str(report_output),
                 tissue_type=map_tissue_type(tissue_type)
@@ -325,7 +324,7 @@ def run_parallel_pipeline(
     print(f"  Total files: {mapping['summary']['total_files']}")
 
     # Find samples
-    print(f"\n[2/5] Finding binned_outputs.tar.gz files...")
+    print("\n[2/5] Finding binned_outputs.tar.gz files...")
     obf_dir = Path(obfuscated_dir)
     samples = find_binned_outputs(obf_dir, mapping)
 
@@ -386,7 +385,7 @@ def run_parallel_pipeline(
                     })
 
     # Summary
-    print(f"\n[4/5] Processing complete!")
+    print("\n[4/5] Processing complete!")
     completed = sum(1 for r in all_results if r['status'] == 'COMPLETED')
     failed = sum(1 for r in all_results if r['status'] == 'FAILED')
 

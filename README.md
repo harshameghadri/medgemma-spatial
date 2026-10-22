@@ -1,256 +1,137 @@
-# MedGemma Spatial Transcriptomics AI Assistant
+# MedGemma Spatial
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+Spatial transcriptomics in, a draft pathology report out, and an honest account of how often the biology in that
+report is wrong.
 
-Production-ready spatial transcriptomics analysis app combining Scanpy, Squidpy, and MedGemma foundation models for automated clinical pathology report generation.
+[![CI](https://github.com/harshameghadri/medgemma-spatial/actions/workflows/ci.yml/badge.svg)](https://github.com/harshameghadri/medgemma-spatial/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE)
 
-## 🎯 Project Overview
+> **Experimental, research use only.** Not a medical device. Reports are drafts for a pathologist to check, not clinical
+> advice. Provided as is, with no warranty of any kind.
 
-**Timeline**: 4 weeks (Jan 23 - Feb 24, 2026)
+## What it does
 
-**Goal**: Deploy a spatial transcriptomics analysis pipeline that:
-- Processes 10x Visium H&E images and gene expression data
-- Performs spatial analysis (clustering, neighborhood enrichment, autocorrelation)
-- Generates clinical-quality pathology reports using MedGemma-4b-it
-
-**Strategy**: GitHub deployment = guaranteed interview material | Kaggle submission = bonus
-
-## 🏗️ Architecture
+![Pipeline](docs/figures/pipeline.png)
 
 ```
-Input: Visium H&E image + gene expression matrix (h5ad)
-    ↓
-Spatial Analysis (Scanpy + Squidpy + optional Loki)
-    ↓
-Feature JSON Output
-    ↓
-MedGemma-4b-it (4-bit quantized)
-    ↓
-Clinical Pathology Report (200 words)
-    ↓
-Streamlit Web App (deployed on HuggingFace Spaces)
+10x Visium / Visium HD (Space Ranger output or .h5ad)
+  → Scanpy + Squidpy: QC, cell-type annotation, Moran's I, neighbourhood entropy, co-enrichment
+  → feature summary (cell types, phenotype, spatial metrics)
+  → evidence prompt: curated ligand-receptor axes for the cell types present
+                     (OmniPath-confirmed pairs, sender → receiver, effect) + therapy rules
+  → MedGemma 4B (text, or text + H&E image)
+  → checks: unsupported numbers / cell types, PubMed-verified citations, prompt copying,
+            and a biology check for the error kinds the reviewer found
+  → Streamlit app with the report, the warnings and a download
 ```
 
-## 🚀 Quick Start
+## What I learned building it
 
-### Prerequisites
+The interesting part of this project is not the pipeline; it is measuring whether a small model's biology can be
+trusted, and what actually moves that number. Every step is logged with its evidence in
+[`docs/REVIEW.md`](docs/REVIEW.md) (findings L1-L20).
 
-- Python 3.10+
-- 64GB RAM recommended (tested on M1 Mac Max)
-- conda or mamba
+1. **The original fine-tune trained on the prompt, not the report.** Examples were truncated at 256–512 tokens, so the
+   targets never reached the model, and the targets themselves carried wrong citations (Helmink et al. 2020 cited
+   as *Nature Medicine* 34 times; it is *Nature*). Fixed: completion-only loss, length checks, citation scrubbing.
+2. **Automatic metrics were not enough.** I distilled a local Llama 3.1 8B teacher into two students, with
+   gates, a 189-card human review and criteria fixed before training. The MedGemma student passed every
+   automatic criterion (mechanism terms 3.1 → 7.0 per report, prompt copying 4 → 0) and then **failed the blinded
+   biology read**: 4 errors against the base model's 3. The Llama student failed the automatic criteria by 0.01.
+   Neither adapter ships.
+3. **The errors had a shape.** The reviewer's 20 errors fell into a few kinds: inhibitory axes described as
+   activating ("PD-1/PD-L1 promotes T cell activation"), immunosuppressants proposed as anti-tumour therapy,
+   receptors placed on the wrong cell (CD40 on epithelium), cell types the data never showed (Tregs, MDSCs), and
+   therapy that ignores the phenotype. Those labels became a checker (`biology_check.py`) and then the design of
+   round 2.
+4. **Retrieving prose made the model copy; retrieving facts made it specific.** Round 2 grounds the prompt instead
+   of retraining. Adding the two most similar reviewer-approved reports made MedGemma retell them: 86% of each
+   report's words were copied, and the raw mechanism count doubled, which would have read as a win if copied text
+   had not been subtracted. Llama 3.1 8B did the same. A 23-row axis table instead (every pair confirmed in
+   OmniPath, sender → receiver and effect on the receiving cell, signed off by the reviewer) worked.
 
-### Installation
+### Round 2 results (MedGemma 4B, 31 held-out prompts; blinded read on 7)
+
+![Results](docs/figures/results.png)
+
+| Prompt | Biology-check flags | Mechanism terms (own words) | Copied from inserted text | Blinded read: errors | Generic |
+|---|---|---|---|---|---|
+| Plain | 6 reports | 3.13 | — | 3 | 7 / 7 |
+| + 2 retrieved approved reports | 1 | 1.23 | 86% (median) | not run (failed) | — |
+| **+ curated axes and rules (served)** | **0** | **6.87** | **0%** | **2** | **0 / 7** |
+
+The evidence prompt is the app's default. Caveats, all in [`REVIEW.md`](docs/REVIEW.md) L20-L23: the pass needed a
+checker fix made after seeing the outputs (co-ligand lists were read as wrong pairs); the reviewer could tell the
+conditions apart from style, so the read was not truly blind; seven cases is a small sample; and the remaining two
+errors (inhibiting a favourable TLS axis; checkpoint monotherapy in stroma-trapped tissue) are the next fixes.
+
+## Quick start
 
 ```bash
-# Clone repository
-git clone https://github.com/yourusername/medgemma-spatial.git
+git clone https://github.com/harshameghadri/medgemma-spatial.git
 cd medgemma-spatial
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pytest -q                                   # ~2 min, CPU only, synthetic tissue
 
-# Create conda environment
-conda env create -f environment.yml
-conda activate medgemma
+streamlit run app/streamlit_app.py          # upload a .h5ad; MedGemma needs a GPU or Apple MPS
 
-# Verify installation
-python -c "import scanpy as sc; import torch; print(f'Scanpy: {sc.__version__}'); print(f'PyTorch: {torch.__version__}'); print(f'MPS: {torch.backends.mps.is_available()}')"
+# or from the command line (Space Ranger folder with filtered_feature_bc_matrix.h5 + spatial/)
+python scripts/run_sample.py analyse --visium-dir data/my_sample --out runs/my_sample
+python scripts/run_sample.py report --out runs/my_sample --mode multimodal
 ```
 
-### Usage
+MedGemma is gated on Hugging Face: accept its terms and set `HF_TOKEN`. `MEDGEMMA_GROUNDING` selects the prompt:
+`evidence` (default: curated axes and therapy rules), `off` (plain) or `full` (plus retrieved reports; not
+recommended, see results).
+
+## Check any model's report
+
+`scripts/check_report.py` needs no GPU and no model; it works on any LLM's output given the exact prompt.
 
 ```bash
-# Run Jupyter notebooks (Week 1-2 development)
-jupyter notebook
-
-# Run Streamlit app (Week 3 deployment)
-streamlit run app/streamlit_app.py
-
-# Process a Visium sample
-python -m src.spatial_analysis.pipeline --input data/sample_visium.h5ad --output outputs/
+python scripts/check_report.py --report report.md --prompt prompt.txt
 ```
 
-## 📁 Project Structure
+It flags numbers and cell types the prompt never gave, citations that PubMed cannot confirm as written, and 5+ word
+runs copied from the prompt. `biology_check.check_report` adds the six biology checks. They catch the specific
+errors they were built from; they do not replace reading the report.
 
-```
-medgemma-spatial/
-├── README.md                    # This file
-├── CLAUDE.MD                    # AI assistant guide
-├── ENVIRONMENT_SETUP.md         # Environment documentation
-├── requirements.txt             # Python dependencies
-├── environment.yml              # Conda environment
-├── .gitignore                  # Git ignore rules
-│
-├── notebooks/                   # Development notebooks
-│   ├── 01_scanpy_baseline.ipynb
-│   ├── 02_loki_test.ipynb      # Optional
-│   ├── 03_medgemma_integration.ipynb
-│   └── kaggle_submission.ipynb
-│
-├── src/                         # Source code
-│   ├── __init__.py
-│   ├── spatial_analysis/        # Scanpy/Squidpy/Loki
-│   │   ├── __init__.py
-│   │   ├── preprocessing.py
-│   │   ├── clustering.py
-│   │   └── spatial_features.py
-│   ├── report_generation/       # MedGemma prompts
-│   │   ├── __init__.py
-│   │   ├── prompts.py
-│   │   └── generator.py
-│   └── utils/                   # Shared utilities
-│       ├── __init__.py
-│       ├── file_io.py
-│       └── validation.py
-│
-├── app/                         # Deployment
-│   ├── streamlit_app.py        # Frontend
-│   ├── api.py                  # FastAPI (optional)
-│   └── Dockerfile
-│
-├── tests/                       # Unit tests
-│   ├── __init__.py
-│   ├── test_spatial_analysis.py
-│   └── test_report_generation.py
-│
-├── data/                        # Data directory (gitignored)
-│   ├── .gitkeep
-│   ├── raw/                    # Original h5ad files
-│   ├── processed/              # Processed outputs
-│   └── sample/                 # Small test samples
-│
-├── outputs/                     # Generated outputs (gitignored)
-│   ├── .gitkeep
-│   ├── figures/                # Plots
-│   └── reports/                # Generated reports
-│
-├── models/                      # Model cache (gitignored)
-│   └── .gitkeep
-│
-├── demo/                        # Portfolio materials
-│   ├── screenshots/
-│   └── videos/
-│
-├── config/                      # Configuration files
-│   └── config.yaml
-│
-├── logs/                        # Application logs (gitignored)
-│   └── .gitkeep
-│
-└── .github/                     # GitHub workflows
-    └── workflows/
-        ├── ci.yml              # CI/CD pipeline
-        └── deploy.yml          # Deployment
-```
-
-## 🔬 Features
-
-### Core Analysis
-- ✅ Scanpy 1.10+ for spatial transcriptomics QC and clustering
-- ✅ Squidpy 1.5+ for spatial graphs and autocorrelation
-- 🔄 Loki spatial foundation model (optional, separate environment)
-- ❌ NicheFormer (not M1 compatible - requires NVIDIA CUDA)
-
-### Report Generation
-- ✅ MedGemma-4b-it with 4-bit quantization
-- ✅ Custom prompt templates for clinical pathology
-- ✅ 200-word report generation (<5min on M1 Mac)
-
-### Deployment
-- ✅ Streamlit web interface
-- ✅ Docker containerization
-- ✅ HuggingFace Spaces deployment
-- 🔄 FastAPI backend (optional)
-
-## 📊 Sample Data
-
-Download public 10x Visium datasets:
+To compare models on the same 31 held-out prompts:
 
 ```bash
-# Breast cancer dataset
-wget https://cf.10xgenomics.com/samples/spatial-exp/1.0.0/V1_Breast_Cancer_Block_A_Section_1/V1_Breast_Cancer_Block_A_Section_1_filtered_feature_bc_matrix.h5 -P data/raw/
-
-# Brain dataset
-wget https://cf.10xgenomics.com/samples/spatial-exp/1.0.0/V1_Mouse_Brain_Sagittal_Posterior/V1_Mouse_Brain_Sagittal_Posterior_filtered_feature_bc_matrix.h5 -P data/raw/
+python scripts/compare_adapter.py --model-id google/medgemma-4b-it --eval data/lora_v4/eval.jsonl --out runs/x.json
+python scripts/build_grounded_eval.py --eval data/lora_v4/eval.jsonl --out data/grounded_v1/eval.jsonl
 ```
 
-## 🧪 Testing
+## Repository map
 
-```bash
-# Run all tests
-pytest tests/
+| Path | What it is |
+|---|---|
+| `src/spatial_analysis/` | annotation, spatial statistics, uncertainty |
+| `src/report_generation/prompt_builder.py` | feature summary → prompt |
+| `src/report_generation/grounding.py` | axis evidence + retrieval of approved reports |
+| `src/report_generation/faithfulness.py`, `pubmed_check.py` | grounding checks, PubMed citation lookup |
+| `src/report_generation/biology_check.py` | the six biology checks, OmniPath pair lookup |
+| `data/knowledge/` | OmniPath snapshot, curated axes, approved reports (with sources and licences) |
+| `scripts/train_lora.py`, `draft_targets.py`, `build_distill_set.py` | QLoRA training and the distillation pipeline |
+| `scripts/compare_adapter.py` | pre-registered model comparisons |
+| `app/` | Streamlit app and Dockerfile |
+| `tests/` | 120+ tests on synthetic tissue, including the blinded-read labels |
+| `docs/REVIEW.md` | every finding, decision and result, with evidence |
 
-# Run specific test file
-pytest tests/test_spatial_analysis.py
+## Data and licences
 
-# Run with coverage
-pytest --cov=src tests/
-```
+- Code: [The Unlicense](LICENSE) (public domain, provided as is). This covers the code only, not the data below.
+- OmniPath snapshot: commercial-use resources only; citation and terms in `data/knowledge/README.md`.
+- `data/knowledge/approved_reports.jsonl`: Llama 3.1 8B outputs picked by the reviewer. Built with Llama; the Llama
+  3.1 Community License applies to these outputs.
+- MedGemma: Health AI Developer Foundations terms. No fine-tuned weights are published.
 
-## 🐳 Docker
+## Acknowledgements
 
-```bash
-# Build image
-docker build -t medgemma-spatial .
+Scanpy (Wolf et al., 2018), Squidpy (Palla et al., 2022), OmniPath (Türei et al., 2016, 2021), MedGemma (Google),
+Llama 3.1 (Meta), 10x Genomics public Visium datasets.
 
-# Run container
-docker run -p 8501:8501 medgemma-spatial
-
-# Access app
-open http://localhost:8501
-```
-
-## 📈 Development Roadmap
-
-### Week 1: Exploration (Jan 23-29)
-- [x] Environment setup
-- [ ] Scanpy baseline notebook
-- [ ] Loki foundation model test
-- [ ] MedGemma integration
-
-### Week 2: Integration (Jan 30 - Feb 5)
-- [ ] Prompt engineering
-- [ ] Code refactoring to src/
-- [ ] Pipeline integration
-- [ ] Multi-sample testing
-
-### Week 3: Deployment (Feb 6-12)
-- [ ] Streamlit app development
-- [ ] Docker containerization
-- [ ] HuggingFace Spaces deployment
-- [ ] Documentation
-
-### Week 4: Polish (Feb 13-24)
-- [ ] Professional README
-- [ ] Demo video
-- [ ] Kaggle submission
-- [ ] LinkedIn post
-
-## 🤝 Contributing
-
-This is a portfolio project for job applications. For questions or collaboration:
-- Open an issue
-- Email: [your-email]
-- LinkedIn: [your-linkedin]
-
-## 📝 License
-
-MIT License - see [LICENSE](LICENSE) file
-
-## 🙏 Acknowledgments
-
-- [10x Genomics](https://www.10xgenomics.com/) for Visium datasets
-- [Scanpy](https://scanpy.readthedocs.io/) team
-- [Squidpy](https://squidpy.readthedocs.io/) developers
-- [Loki](https://github.com/GuangyuWangLab2021/Loki) authors
-- [MedGemma](https://huggingface.co/google/medgemma) team at Google
-
-## 📚 References
-
-- Scanpy: Wolf et al., Genome Biology (2018)
-- Squidpy: Palla et al., Nature Methods (2022)
-- Loki: Wang et al., Nature Methods (2025)
-- MedGemma: Google Research (2024)
-
----
-
-**Built by**: [Your Name] | **Contact**: [Your Email] | **Portfolio**: [Your Website]
+Built by Sri Harsha Meghadri.

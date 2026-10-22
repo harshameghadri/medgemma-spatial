@@ -1,40 +1,25 @@
+# Mirrors the CI gates so failures show up before push.
+#   pip install pre-commit && pre-commit install
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
       - id: check-yaml
-      - id: check-added-large-files
-        args: ['--maxkb=10000']  # 10MB limit
-      - id: check-json
       - id: check-toml
+      - id: check-json
       - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=5000"]
       - id: detect-private-key
 
-  - repo: https://github.com/psf/black
-    rev: 24.1.1
-    hooks:
-      - id: black
-        language_version: python3.10
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.15
+    rev: v0.14.0
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [src, app, scripts, tests]
+        pass_filenames: false
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.8.0
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.28.0
     hooks:
-      - id: mypy
-        additional_dependencies: [types-all]
-        args: [--ignore-missing-imports]
-        exclude: ^(tests/|Loki/)
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        name: isort (python)
-        args: ["--profile", "black"]
+      - id: gitleaks

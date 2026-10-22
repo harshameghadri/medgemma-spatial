@@ -18,18 +18,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
     import scanpy as sc
-    import pandas as pd
     import plotly.express as px
-    import plotly.graph_objects as go
     from src.streamlit_adapter import (
         annotate_spatial_regions,
-        calculate_spatial_heterogeneity
+        build_features,
+        calculate_spatial_heterogeneity,
     )
     from src.report_generation.medgemma_multimodal import (
         generate_multimodal_report,
         generate_textonly_fallback
     )
-    from src.report_generation.prompt_builder import create_anti_parroting_prompt
+    from src.report_generation.pubmed_check import review_report
 except ImportError as e:
     st.error(f"Missing dependencies: {e}")
     st.stop()
@@ -66,9 +65,17 @@ def safe_json(obj):
     return _clean(obj)
 
 
+DISCLAIMER = (
+    "**Research use only.** Not a medical device. Generated text is a draft "
+    "interpretation of computed features and must not be used for diagnosis "
+    "or treatment decisions."
+)
+
+
 def create_header():
     """Create app header with branding."""
     st.title("🔬 MedGemma Spatial Transcriptomics")
+    st.warning(DISCLAIMER)
     st.markdown("""
     **AI-powered spatial transcriptomics analysis and pathology report generation**
 
@@ -187,17 +194,12 @@ def run_spatial_analysis(adata, use_markers, resolution):
         # Step 3: Extract features
         status_text.text("Step 3/3: Extracting features...")
 
-        features = {
-            'annotation': annot_metrics,
-            'spatial_heterogeneity': spatial_metrics,
-            'uncertainty': {
-                'mean_prediction_entropy': float(adata.obs['prediction_entropy'].mean())
-                    if 'prediction_entropy' in adata.obs.columns else 1.0
-            }
-        }
+        features = build_features(adata, annot_metrics, spatial_metrics)
 
         progress_bar.progress(100)
         status_text.text("✓ Analysis complete!")
+        for msg in features['errors']:
+            st.warning(msg)
 
         return adata, features, True
 
@@ -273,63 +275,110 @@ def visualize_spatial_data(adata):
             st.metric("Clusters", "N/A")
 
 
-def generate_report(adata, features, use_multimodal):
-    """Generate MedGemma report."""
-    st.header("📝 Pathology Report")
-
-    with st.spinner("Generating report with MedGemma..."):
+def _run_model(adata, features, use_multimodal):
+    """Call MedGemma; multimodal falls back to text-only when no H&E image is present."""
+    if use_multimodal:
         try:
-            start_time = time.time()
+            return generate_multimodal_report(adata, features)
+        except KeyError as e:
+            st.info(f"No H&E image available ({e}); using text-only mode.")
+    return generate_textonly_fallback(features)
 
-            if use_multimodal:
-                report, metadata = generate_multimodal_report(
-                    adata,
-                    features,
-                    device='cpu',
-                )
-            else:
-                report, metadata = generate_textonly_fallback(
-                    features,
-                    device='cpu',
-                )
 
-            elapsed = time.time() - start_time
+def with_biology(review, report, prompt):
+    """Add biology-check findings (docs/REVIEW.md L19) to a grounding review."""
+    from src.report_generation.biology_check import check_report
+    from src.report_generation.grounding import infer_pattern
 
-            st.success(f"✓ Report generated in {elapsed:.1f}s")
+    review['biology'] = check_report(report, prompt or None, infer_pattern(prompt or ""))
+    return review
 
-            # Display report
-            st.markdown("### Generated Report")
-            st.markdown(report)
 
-            # Metadata
-            with st.expander("📋 Report Metadata"):
-                st.json(safe_json(metadata))
+def show_grounding_review(review, raw_report):
+    """Flag claims the report makes that its input did not support."""
+    st.markdown("### 🔎 Grounding check")
+    issues = []
+    if review['unsupported_numbers']:
+        issues.append("Numbers not present in the input (sentences removed): "
+                      + ", ".join(review['unsupported_numbers']))
+    if review['unsupported_cell_types']:
+        issues.append("Cell types not detected in this sample (sentences removed): "
+                      + ", ".join(t.replace('_', ' ') for t in review['unsupported_cell_types']))
+    for c in review['pubmed']:
+        if c['status'] == 'verified':
+            st.success(f"Citation confirmed in PubMed: {c['text']} → PMID {c['pmid']} ({c.get('title') or ''})")
+        elif c['status'] == 'unchecked':
+            issues.append(f"Citation not checked (PubMed unavailable): {c['text']}")
+        else:
+            issues.append(f"Citation not found in PubMed as written ({c['status']}), sentence removed: {c['text']}")
+    for msg in issues:
+        st.warning(msg)
+    for f in review.get('biology', []):
+        st.warning(f"Biology check ({f['check'].replace('_', ' ')}): {f['detail']} — \"{f['sentence'][:160]}\"")
+    if not issues and not review['pubmed'] and not review.get('biology'):
+        st.info("No citations, and every number and cell type in the report appears in the input.")
+    if review['clean_text'] != raw_report:
+        with st.expander("Original model output (before removing ungrounded sentences)"):
+            st.markdown(raw_report)
 
-            # Download button
-            sep = "=" * 80
-            dash = "-" * 80
-            report_text = (
-                f"MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT\n{sep}\n\n"
-                f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Mode: {metadata.get('mode', 'unknown')}\n\n"
-                f"REPORT:\n{dash}\n{report}\n{sep}\n\n"
-                f"FEATURES:\n{json.dumps(features, indent=2, default=str)}\n"
-            )
 
-            st.download_button(
-                label="📥 Download Report (TXT)",
-                data=report_text,
-                file_name=f"medgemma_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
-            )
+def generate_report(adata, features, use_multimodal):
+    """Generate the MedGemma report on demand and keep it across reruns."""
+    st.header("📝 Pathology Report")
+    st.caption(DISCLAIMER)
 
-            return True
+    verify = st.checkbox(
+        "Verify citations against PubMed", value=True,
+        help="Looks up any 'Author et al. (Journal, Year)' in PubMed and removes sentences "
+             "citing papers that cannot be confirmed. Needs internet; skipped when offline.")
 
-        except Exception as e:
-            st.error(f"Report generation failed: {e}")
-            import traceback
-            st.code(traceback.format_exc())
-            return False
+    if st.button("🧠 Generate report with MedGemma"):
+        with st.spinner("Loading MedGemma (first run downloads ~8.6 GB) and generating..."):
+            try:
+                start_time = time.time()
+                report, metadata = _run_model(adata, features, use_multimodal)
+                metadata['elapsed_s'] = round(time.time() - start_time, 1)
+                st.session_state['report'] = (report, metadata)
+                st.session_state['review'] = with_biology(
+                    review_report(report, metadata.get('prompt', ''), verify), report, metadata.get('prompt', ''))
+            except Exception as e:
+                st.error(f"Report generation failed: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+                return False
+
+    if 'report' not in st.session_state:
+        return False
+
+    raw_report, metadata = st.session_state['report']
+    review = st.session_state.get('review') or review_report(raw_report, metadata.get('prompt', ''), False)
+    report = review['clean_text']
+    st.success(f"✓ Report generated in {metadata.get('elapsed_s', 0):.1f}s")
+    st.markdown("### Generated Report")
+    st.markdown(report)
+    show_grounding_review(review, raw_report)
+
+    with st.expander("📋 Report Metadata"):
+        st.json(safe_json(metadata))
+
+    sep = "=" * 80
+    dash = "-" * 80
+    report_text = (
+        f"MEDGEMMA SPATIAL TRANSCRIPTOMICS REPORT\n{sep}\n\n"
+        f"RESEARCH USE ONLY - NOT FOR CLINICAL DECISION MAKING\n\n"
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Mode: {metadata.get('mode', 'unknown')}\n"
+        f"Model: {metadata.get('model_id')}  Adapter: {metadata.get('adapter_id')}\n\n"
+        f"REPORT:\n{dash}\n{report}\n{sep}\n\n"
+        f"FEATURES:\n{json.dumps(features, indent=2, default=str)}\n"
+    )
+    st.download_button(
+        label="📥 Download Report (TXT)",
+        data=report_text,
+        file_name=f"medgemma_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+        mime="text/plain"
+    )
+    return True
 
 
 def main():
@@ -384,9 +433,9 @@ def main():
             st.error("Analysis failed. Check errors above.")
             st.stop()
 
-        # Store in session state
         st.session_state['adata'] = adata
         st.session_state['features'] = features
+        st.session_state.pop('report', None)
 
     # Show results if available
     if 'adata' in st.session_state and 'features' in st.session_state:
