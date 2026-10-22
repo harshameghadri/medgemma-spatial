@@ -66,8 +66,10 @@ def test_serving_respects_the_mode_and_infers_the_pattern(monkeypatch):
     from src.report_generation.grounding import infer_pattern, serve_prompt
 
     source = EVAL_PROMPTS["p7"]
-    monkeypatch.delenv("MEDGEMMA_GROUNDING", raising=False)
+    monkeypatch.setenv("MEDGEMMA_GROUNDING", "off")
     assert serve_prompt(source) == (source, {"grounding": "off"})
+    monkeypatch.delenv("MEDGEMMA_GROUNDING", raising=False)
+    assert serve_prompt(source)[1]["grounding"] == "evidence"
     monkeypatch.setenv("MEDGEMMA_GROUNDING", "evidence")
     served, meta = serve_prompt(source)
     assert meta["grounding"] == "evidence" and "CANDIDATE LIGAND-RECEPTOR AXES" in served

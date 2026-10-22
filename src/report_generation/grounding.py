@@ -166,7 +166,7 @@ def examples_block(summary: Dict) -> str:
 
 
 GROUNDING_MODES = ("off", "evidence", "full")
-DEFAULT_MODE = "off"
+DEFAULT_MODE = "evidence"
 
 
 def grounding_mode() -> str:

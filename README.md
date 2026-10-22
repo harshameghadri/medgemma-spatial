@@ -16,8 +16,8 @@ report is wrong.
 10x Visium / Visium HD (Space Ranger output or .h5ad)
   → Scanpy + Squidpy: QC, cell-type annotation, Moran's I, neighbourhood entropy, co-enrichment
   → feature summary (cell types, phenotype, spatial metrics)
-  → grounded prompt: curated ligand-receptor axes for the cell types present
-                     + the two most similar reports a domain reviewer approved
+  → evidence prompt: curated ligand-receptor axes for the cell types present
+                     (OmniPath-confirmed pairs, sender → receiver, effect) + therapy rules
   → MedGemma 4B (text, or text + H&E image)
   → checks: unsupported numbers / cell types, PubMed-verified citations, prompt copying,
             and a biology check for the error kinds the reviewer found
@@ -43,11 +43,24 @@ trusted, and what actually moves that number. Every step is logged with its evid
    receptors placed on the wrong cell (CD40 on epithelium), cell types the data never showed (Tregs, MDSCs), and
    therapy that ignores the phenotype. Those labels became a checker (`biology_check.py`) and then the design of
    round 2.
-4. **Round 2 grounds the prompt instead of retraining.** A 23-row axis table, every pair confirmed in an OmniPath
-   snapshot and signed off by the reviewer, gives the model the sender, receiver and direction for the cell types
-   present; retrieval adds two reviewer-approved reports as examples. Results: see below.
+4. **Retrieving prose made the model copy; retrieving facts made it specific.** Round 2 grounds the prompt instead
+   of retraining. Adding the two most similar reviewer-approved reports made MedGemma retell them: 86% of each
+   report's words were copied, and the raw mechanism count doubled, which would have read as a win if copied text
+   had not been subtracted. Llama 3.1 8B did the same. A 23-row axis table instead (every pair confirmed in
+   OmniPath, sender → receiver and effect on the receiving cell, signed off by the reviewer) worked.
 
-<!-- ROUND2_RESULTS -->
+### Round 2 results (MedGemma 4B, 31 held-out prompts; blinded read on 7)
+
+| Prompt | Biology-check flags | Mechanism terms (own words) | Copied from inserted text | Blinded read: errors | Generic |
+|---|---|---|---|---|---|
+| Plain | 6 reports | 3.13 | — | 3 | 7 / 7 |
+| + 2 retrieved approved reports | 1 | 1.23 | 86% (median) | not run (failed) | — |
+| **+ curated axes and rules (served)** | **0** | **6.87** | **0%** | **2** | **0 / 7** |
+
+The evidence prompt is the app's default. Caveats, all in [`REVIEW.md`](docs/REVIEW.md) L20-L23: the pass needed a
+checker fix made after seeing the outputs (co-ligand lists were read as wrong pairs); the reviewer could tell the
+conditions apart from style, so the read was not truly blind; seven cases is a small sample; and the remaining two
+errors (inhibiting a favourable TLS axis; checkpoint monotherapy in stroma-trapped tissue) are the next fixes.
 
 ## Quick start
 
@@ -66,7 +79,8 @@ python scripts/run_sample.py report --out runs/my_sample --mode multimodal
 ```
 
 MedGemma is gated on Hugging Face: accept its terms and set `HF_TOKEN`. `MEDGEMMA_GROUNDING` selects the prompt:
-`off` (plain), `evidence` (curated axes and therapy rules) or `full` (plus retrieved reports).
+`evidence` (default: curated axes and therapy rules), `off` (plain) or `full` (plus retrieved reports; not
+recommended, see results).
 
 ## Check any model's report
 
