@@ -5,7 +5,6 @@ Maintains original filenames in separate mapping file.
 """
 
 import os
-import shutil
 import secrets
 import json
 from pathlib import Path

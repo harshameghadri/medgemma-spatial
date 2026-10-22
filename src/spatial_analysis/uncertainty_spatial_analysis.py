@@ -7,8 +7,6 @@ Stage 1: Spatial pattern extraction with uncertainty quantification
 import scanpy as sc
 import numpy as np
 import pandas as pd
-from scipy import stats
-from typing import Dict, Tuple, List
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -185,7 +183,7 @@ def compute_morans_i_with_uncertainty(adata, n_genes=100, n_permutations=999):
     return df.to_dict('list')
 
 
-def compute_multiscale_neighborhood_enrichment(adata, radii=[1, 2, 3], n_permutations=999):
+def compute_multiscale_neighborhood_enrichment(adata, radii=(1, 2, 3), n_permutations=999):
     """
     Compute neighborhood enrichment at multiple spatial scales.
 
@@ -214,7 +212,7 @@ def compute_multiscale_neighborhood_enrichment(adata, radii=[1, 2, 3], n_permuta
         }
 
     multiscale_results = {
-        'radii': radii,
+        'radii': list(radii),
         'enrichment_by_radius': {},
         'scale_stable_pairs': [],
         'scale_dependent_pairs': []

@@ -410,7 +410,7 @@ def generate_dataset(n, output_dir, dry_run=False, seed=42):
     _write_jsonl(train_path, train_records)
     _write_jsonl(eval_path, eval_records)
 
-    print(f"\nDone.")
+    print("\nDone.")
     print(f"  Train: {len(train_records)} examples -> {train_path}")
     print(f"  Eval:  {len(eval_records)} examples -> {eval_path}")
 

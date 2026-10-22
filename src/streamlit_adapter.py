@@ -4,10 +4,6 @@ Streamlit Adapter for V2 Pipeline
 Provides interface functions expected by Streamlit app that call V2 pipeline components.
 """
 
-import sys
-from pathlib import Path
-import tempfile
-import json
 
 import math
 import numpy as np
@@ -26,7 +22,6 @@ def _safe_float(value, default=0.0):
 
 # Import V2 pipeline functions
 from src.spatial_analysis.uncertainty_spatial_analysis import (
-    detect_doublets_scrublet,
     compute_morans_i_with_uncertainty,
     compute_multiscale_neighborhood_enrichment,
     compute_spatial_entropy_with_bootstrapping,

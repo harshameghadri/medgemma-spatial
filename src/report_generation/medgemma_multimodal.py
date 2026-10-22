@@ -12,8 +12,6 @@ from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM, BitsAndB
 import torch
 import numpy as np
 from typing import Dict, Optional, Tuple
-import sys
-from pathlib import Path
 
 
 def load_hires_image_from_adata(adata, library_id: Optional[str] = None) -> Image.Image:
@@ -232,7 +230,7 @@ def generate_multimodal_report(
             token=hf_token,
             device_map="auto",
         )
-        print(f"  ✓ Model loaded (4-bit quantized)")
+        print("  ✓ Model loaded (4-bit quantized)")
     except Exception as e:
         print(f"  ✗ Model loading failed: {e}")
         print("\nTROUBLESHOOTING:")
@@ -314,12 +312,12 @@ def generate_textonly_fallback(
         token=hf_token,
         low_cpu_mem_usage=True
     )
-    print(f"  ✓ Model loaded")
+    print("  ✓ Model loaded")
 
     print("\n[2/3] Creating text-only prompt...")
     prompt = create_multimodal_prompt(features)
     prompt = prompt.replace("H&E IMAGE:\n- High-resolution tissue section provided above\n- Use morphological features to interpret spatial patterns\n\n", "")
-    print(f"  ✓ Prompt ready")
+    print("  ✓ Prompt ready")
 
     print("\n[3/3] Generating report...")
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
