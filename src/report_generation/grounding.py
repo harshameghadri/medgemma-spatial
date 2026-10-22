@@ -165,9 +165,14 @@ def examples_block(summary: Dict) -> str:
     return "\n\n".join(parts)
 
 
-def grounding_enabled() -> bool:
-    """Grounding is on unless MEDGEMMA_GROUNDING=0."""
-    return os.environ.get("MEDGEMMA_GROUNDING", "1") != "0"
+GROUNDING_MODES = ("off", "evidence", "full")
+DEFAULT_MODE = "off"
+
+
+def grounding_mode() -> str:
+    """MEDGEMMA_GROUNDING: off (plain prompt), evidence (axes + rules) or full (plus retrieved reports)."""
+    mode = os.environ.get("MEDGEMMA_GROUNDING", DEFAULT_MODE).lower()
+    return mode if mode in GROUNDING_MODES else DEFAULT_MODE
 
 
 def infer_pattern(prompt: str) -> Optional[str]:
@@ -177,11 +182,12 @@ def infer_pattern(prompt: str) -> Optional[str]:
 
 
 def serve_prompt(prompt: str) -> Tuple[str, Dict]:
-    """(prompt to send, metadata) with grounding applied when enabled."""
-    if not grounding_enabled():
-        return prompt, {"grounding": False}
-    served, added = ground_prompt(prompt)
-    return served, {"grounding": bool(added), "served_prompt": served}
+    """(prompt to send, metadata) for the configured grounding mode."""
+    mode = grounding_mode()
+    if mode == "off":
+        return prompt, {"grounding": "off"}
+    served, added = ground_prompt(prompt, evidence=True, examples=mode == "full")
+    return served, {"grounding": mode if added else "off", "served_prompt": served}
 
 
 def ground_prompt(prompt: str, evidence: bool = True, examples: bool = True) -> Tuple[str, str]:

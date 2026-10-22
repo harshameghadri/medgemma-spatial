@@ -62,15 +62,18 @@ def test_retrieval_prefers_the_same_phenotype():
     assert all(r["summary"]["phenotype"] == s["phenotype"] for r in retrieve(s))
 
 
-def test_serving_respects_the_switch_and_infers_the_pattern(monkeypatch):
+def test_serving_respects_the_mode_and_infers_the_pattern(monkeypatch):
     from src.report_generation.grounding import infer_pattern, serve_prompt
 
     source = EVAL_PROMPTS["p7"]
-    monkeypatch.setenv("MEDGEMMA_GROUNDING", "0")
-    assert serve_prompt(source) == (source, {"grounding": False})
-    monkeypatch.setenv("MEDGEMMA_GROUNDING", "1")
+    monkeypatch.delenv("MEDGEMMA_GROUNDING", raising=False)
+    assert serve_prompt(source) == (source, {"grounding": "off"})
+    monkeypatch.setenv("MEDGEMMA_GROUNDING", "evidence")
     served, meta = serve_prompt(source)
-    assert meta["grounding"] and served != source
+    assert meta["grounding"] == "evidence" and "CANDIDATE LIGAND-RECEPTOR AXES" in served
+    assert "EXAMPLE REPORTS" not in served
+    monkeypatch.setenv("MEDGEMMA_GROUNDING", "full")
+    assert "EXAMPLE REPORTS" in serve_prompt(source)[0]
     assert infer_pattern(source) == "myeloid_dominant"
 
 

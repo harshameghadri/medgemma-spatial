@@ -65,8 +65,8 @@ python scripts/run_sample.py analyse --visium-dir data/my_sample --out runs/my_s
 python scripts/run_sample.py report --out runs/my_sample --mode multimodal
 ```
 
-MedGemma is gated on Hugging Face: accept its terms and set `HF_TOKEN`. Grounding is on by default;
-`MEDGEMMA_GROUNDING=0` serves the plain prompt.
+MedGemma is gated on Hugging Face: accept its terms and set `HF_TOKEN`. `MEDGEMMA_GROUNDING` selects the prompt:
+`off` (plain), `evidence` (curated axes and therapy rules) or `full` (plus retrieved reports).
 
 ## Check any model's report
 
