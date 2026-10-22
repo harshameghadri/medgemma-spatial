@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Spatial transcriptomics analysis with MedGemma foundation models"
 readme = "README.md"
 requires-python = ">=3.12"
-license = {text = "MIT"}
+license = {text = "Unlicense"}
 authors = [
     {name = "Sri Harsha Meghadri"}
 ]
@@ -16,7 +16,7 @@ keywords = ["spatial-transcriptomics", "scanpy", "squidpy", "medgemma", "patholo
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: The Unlicense (Unlicense)",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
 ]

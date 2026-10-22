@@ -5,9 +5,10 @@ report is wrong.
 
 [![CI](https://github.com/harshameghadri/medgemma-spatial/actions/workflows/ci.yml/badge.svg)](https://github.com/harshameghadri/medgemma-spatial/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](LICENSE)
 
-> **Research use only.** Not a medical device. Reports are drafts for a pathologist to check, not clinical advice.
+> **Experimental, research use only.** Not a medical device. Reports are drafts for a pathologist to check, not clinical
+> advice. Provided as is, with no warranty of any kind.
 
 ## What it does
 
@@ -104,7 +105,7 @@ python scripts/build_grounded_eval.py --eval data/lora_v4/eval.jsonl --out data/
 
 ## Data and licences
 
-- Code: MIT.
+- Code: [The Unlicense](LICENSE) (public domain, provided as is). This covers the code only, not the data below.
 - OmniPath snapshot: commercial-use resources only; citation and terms in `data/knowledge/README.md`.
 - `data/knowledge/approved_reports.jsonl`: Llama 3.1 8B outputs picked by the reviewer. Built with Llama; the Llama
   3.1 Community License applies to these outputs.
@@ -114,3 +115,5 @@ python scripts/build_grounded_eval.py --eval data/lora_v4/eval.jsonl --out data/
 
 Scanpy (Wolf et al., 2018), Squidpy (Palla et al., 2022), OmniPath (Türei et al., 2016, 2021), MedGemma (Google),
 Llama 3.1 (Meta), 10x Genomics public Visium datasets.
+
+Built by Sri Harsha Meghadri.
