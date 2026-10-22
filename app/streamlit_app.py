@@ -285,6 +285,15 @@ def _run_model(adata, features, use_multimodal):
     return generate_textonly_fallback(features)
 
 
+def with_biology(review, report, prompt):
+    """Add biology-check findings (docs/REVIEW.md L19) to a grounding review."""
+    from src.report_generation.biology_check import check_report
+    from src.report_generation.grounding import infer_pattern
+
+    review['biology'] = check_report(report, prompt or None, infer_pattern(prompt or ""))
+    return review
+
+
 def show_grounding_review(review, raw_report):
     """Flag claims the report makes that its input did not support."""
     st.markdown("### 🔎 Grounding check")
@@ -304,7 +313,9 @@ def show_grounding_review(review, raw_report):
             issues.append(f"Citation not found in PubMed as written ({c['status']}), sentence removed: {c['text']}")
     for msg in issues:
         st.warning(msg)
-    if not issues and not review['pubmed']:
+    for f in review.get('biology', []):
+        st.warning(f"Biology check ({f['check'].replace('_', ' ')}): {f['detail']} — \"{f['sentence'][:160]}\"")
+    if not issues and not review['pubmed'] and not review.get('biology'):
         st.info("No citations, and every number and cell type in the report appears in the input.")
     if review['clean_text'] != raw_report:
         with st.expander("Original model output (before removing ungrounded sentences)"):
@@ -328,7 +339,8 @@ def generate_report(adata, features, use_multimodal):
                 report, metadata = _run_model(adata, features, use_multimodal)
                 metadata['elapsed_s'] = round(time.time() - start_time, 1)
                 st.session_state['report'] = (report, metadata)
-                st.session_state['review'] = review_report(report, metadata.get('prompt', ''), verify)
+                st.session_state['review'] = with_biology(
+                    review_report(report, metadata.get('prompt', ''), verify), report, metadata.get('prompt', ''))
             except Exception as e:
                 st.error(f"Report generation failed: {e}")
                 import traceback

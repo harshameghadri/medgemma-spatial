@@ -60,3 +60,24 @@ def test_corpus_is_clean_and_never_contains_an_eval_prompt():
 def test_retrieval_prefers_the_same_phenotype():
     s = parse_summary(EVAL_PROMPTS["p6"])
     assert all(r["summary"]["phenotype"] == s["phenotype"] for r in retrieve(s))
+
+
+def test_serving_respects_the_switch_and_infers_the_pattern(monkeypatch):
+    from src.report_generation.grounding import infer_pattern, serve_prompt
+
+    source = EVAL_PROMPTS["p7"]
+    monkeypatch.setenv("MEDGEMMA_GROUNDING", "0")
+    assert serve_prompt(source) == (source, {"grounding": False})
+    monkeypatch.setenv("MEDGEMMA_GROUNDING", "1")
+    served, meta = serve_prompt(source)
+    assert meta["grounding"] and served != source
+    assert infer_pattern(source) == "myeloid_dominant"
+
+
+def test_multimodal_prompt_is_grounded_too():
+    from src.report_generation.grounding import ground_prompt
+    from src.report_generation.medgemma_multimodal import create_multimodal_prompt
+    from tests.test_faithfulness import FEATURES
+
+    _, added = ground_prompt(create_multimodal_prompt(FEATURES))
+    assert "CANDIDATE LIGAND-RECEPTOR AXES" in added

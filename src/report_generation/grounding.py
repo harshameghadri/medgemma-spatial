@@ -18,6 +18,7 @@ the examples can be measured separately from copying from the original prompt.
 import csv
 import functools
 import json
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -162,6 +163,25 @@ def examples_block(summary: Dict) -> str:
     for i, r in enumerate(hits, 1):
         parts.append(f"--- Example {i} ({r['summary']['phenotype']}) ---\n{r['text'].strip()}")
     return "\n\n".join(parts)
+
+
+def grounding_enabled() -> bool:
+    """Grounding is on unless MEDGEMMA_GROUNDING=0."""
+    return os.environ.get("MEDGEMMA_GROUNDING", "1") != "0"
+
+
+def infer_pattern(prompt: str) -> Optional[str]:
+    """Pattern label the biology check needs, from the prompt alone (the app has no dataset label)."""
+    tags = contexts(parse_summary(prompt))
+    return "myeloid_dominant" if "myeloid" in tags else "cold_immune_desert" if "desert" in tags else None
+
+
+def serve_prompt(prompt: str) -> Tuple[str, Dict]:
+    """(prompt to send, metadata) with grounding applied when enabled."""
+    if not grounding_enabled():
+        return prompt, {"grounding": False}
+    served, added = ground_prompt(prompt)
+    return served, {"grounding": bool(added), "served_prompt": served}
 
 
 def ground_prompt(prompt: str, evidence: bool = True, examples: bool = True) -> Tuple[str, str]:
