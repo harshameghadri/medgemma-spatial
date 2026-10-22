@@ -1,0 +1,9 @@
+# LoRA training stack. Installed on top of an existing torch (>=2.6), e.g. the
+# Kaggle GPU image; torch itself is deliberately not listed so Kaggle's CUDA
+# build is kept. Versions match requirements.txt where they overlap.
+transformers==5.20.2
+accelerate==1.15.0
+peft==0.21.2
+trl==1.16.0
+datasets==5.1.0
+bitsandbytes==0.50.2; sys_platform == "linux"

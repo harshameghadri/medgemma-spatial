@@ -1,183 +1,258 @@
 #!/usr/bin/env python3
-"""Local smoke-test script for MedGemma LoRA fine-tuning (CPU / M1 Mac compatible)."""
+"""LoRA / QLoRA fine-tuning of MedGemma on spatial pathology reports.
+
+Runs the same way on a Kaggle T4, a CUDA workstation, an M1 Mac or CPU (the
+last two only for smoke tests). Expects prompt-completion JSONL produced by
+``scripts/build_lora_dataset.py``.
+
+Guards against the failure modes found in docs/REVIEW.md:
+  * every example must fit in --max-length (no silent truncation of targets)
+  * loss is computed on completion tokens only
+  * training stops on a non-finite loss instead of saving a broken adapter
+
+Examples:
+    # 2-step CPU smoke test with a tiny checkpoint
+    python scripts/train_lora.py --model-id trl-internal-testing/tiny-Gemma3ForConditionalGeneration \
+        --data-dir tests/fixtures/lora --max-steps 2 --quantize none
+
+    # Kaggle T4
+    python scripts/train_lora.py --data-dir /kaggle/input/medgemma-spatial-data \
+        --output-dir /kaggle/working/adapter --push-to-hub user/medgemma-spatial-adapter
+"""
 
 import argparse
+import math
 import os
+import sys
 from pathlib import Path
 
+DEFAULT_TARGETS = r".*language_model.*\.(q_proj|k_proj|v_proj|o_proj)"
 
-def parse_args():
+
+def parse_args(argv=None):
     """Parse CLI arguments."""
-    parser = argparse.ArgumentParser(description="MedGemma LoRA fine-tuning (local test)")
-    parser.add_argument("--max-steps", type=int, default=-1,
-                        help="Maximum training steps (-1 = full training, 1 = smoke test)")
-    parser.add_argument("--no-gpu", action="store_true",
-                        help="Skip BitsAndBytes quantization; use float32 on CPU")
-    parser.add_argument("--data-dir", type=str, default="data/lora_training/",
-                        help="Directory containing train.jsonl and eval.jsonl")
-    parser.add_argument("--output-dir", type=str, default="outputs/lora_adapter/",
-                        help="Output directory for the trained adapter")
-    return parser.parse_args()
+    p = argparse.ArgumentParser(description="MedGemma LoRA fine-tuning")
+    p.add_argument("--model-id", default="google/medgemma-4b-it")
+    p.add_argument("--data-dir", default="data/lora_training_v2",
+                   help="Directory (searched recursively) containing train.jsonl and eval.jsonl")
+    p.add_argument("--output-dir", default="outputs/lora_adapter")
+    p.add_argument("--max-length", type=int, default=1024,
+                   help="Longest rendered example is 944 tokens with the serving prompt")
+    p.add_argument("--epochs", type=float, default=2.0)
+    p.add_argument("--max-steps", type=int, default=-1, help="-1 = use --epochs")
+    p.add_argument("--learning-rate", type=float, default=1e-4)
+    p.add_argument("--batch-size", type=int, default=1)
+    p.add_argument("--grad-accum", type=int, default=8)
+    p.add_argument("--lora-r", type=int, default=16)
+    p.add_argument("--lora-alpha", type=int, default=32)
+    p.add_argument("--lora-dropout", type=float, default=0.05)
+    p.add_argument("--target-modules", default=DEFAULT_TARGETS,
+                   help="Regex over module names; default = language-model attention only")
+    p.add_argument("--quantize", choices=["auto", "4bit", "none"], default="auto",
+                   help="auto = 4-bit when CUDA + bitsandbytes are available")
+    p.add_argument("--precision", choices=["auto", "bf16", "fp16", "fp32"], default="auto",
+                   help="auto = bf16 if supported, else fp32 compute (Gemma 3 overflows in fp16)")
+    p.add_argument("--push-to-hub", default=None, help="HF repo id for the adapter")
+    p.add_argument("--seed", type=int, default=42)
+    return p.parse_args(argv)
+
+
+def find_data_files(data_dir: str):
+    """Locate train.jsonl / eval.jsonl, searching subdirectories (Kaggle inputs nest)."""
+    root = Path(data_dir)
+    direct = root / "train.jsonl"
+    hits = [direct] if direct.exists() else sorted(root.rglob("train.jsonl"))
+    if not hits:
+        raise FileNotFoundError(f"train.jsonl not found under {root}")
+    train = hits[0]
+    evals = train.parent / "eval.jsonl"
+    return train, (evals if evals.exists() else None)
 
 
 def load_data(data_dir: str):
-    """Load train/eval JSONL datasets."""
+    """Load prompt-completion JSONL into a DatasetDict."""
     from datasets import load_dataset
 
-    data_path = Path(data_dir)
-    train_file = data_path / "train.jsonl"
-    eval_file = data_path / "eval.jsonl"
-
-    if not train_file.exists():
-        raise FileNotFoundError(f"Training data not found at {train_file}")
-    if not eval_file.exists():
-        raise FileNotFoundError(f"Eval data not found at {eval_file}")
-
-    dataset = load_dataset("json", data_files={
-        "train": str(train_file),
-        "validation": str(eval_file),
-    })
-    print(f"Data loaded — Train: {len(dataset['train'])} | Eval: {len(dataset['validation'])}")
-    return dataset
+    train, evals = find_data_files(data_dir)
+    files = {"train": str(train)}
+    if evals:
+        files["validation"] = str(evals)
+    ds = load_dataset("json", data_files=files)
+    missing = {"prompt", "completion"} - set(ds["train"].column_names)
+    if missing:
+        raise ValueError(
+            f"{train} lacks {sorted(missing)}; build it with scripts/build_lora_dataset.py "
+            "(the old single-'text' format trains on the prompt)")
+    print(f"Data: {train.parent} — train {len(ds['train'])}"
+          + (f", eval {len(ds['validation'])}" if evals else ""))
+    return ds
 
 
-def load_model_and_tokenizer(no_gpu: bool, hf_token):
-    """Load model with optional 4-bit quantization."""
+def token_lengths(tokenizer, example):
+    """(prompt_tokens, total_tokens) for one prompt-completion example via the chat template."""
+    prompt_ids = tokenizer.apply_chat_template(
+        example["prompt"], tokenize=True, add_generation_prompt=True)
+    full_ids = tokenizer.apply_chat_template(
+        example["prompt"] + example["completion"], tokenize=True)
+    if hasattr(prompt_ids, "keys"):
+        prompt_ids, full_ids = prompt_ids["input_ids"], full_ids["input_ids"]
+    return len(prompt_ids), len(full_ids)
+
+
+def check_lengths(tokenizer, dataset, max_length: int, min_completion_tokens: int = 50):
+    """Fail fast if any example would be truncated or has almost no target tokens."""
+    worst_total, worst_completion = 0, math.inf
+    for i, ex in enumerate(dataset):
+        n_prompt, n_total = token_lengths(tokenizer, ex)
+        n_completion = n_total - n_prompt
+        worst_total = max(worst_total, n_total)
+        worst_completion = min(worst_completion, n_completion)
+        if n_total > max_length:
+            raise ValueError(
+                f"Example {i} is {n_total} tokens > --max-length {max_length}; it would be "
+                f"truncated and lose {n_total - max_length} target tokens")
+        if n_completion < min_completion_tokens:
+            raise ValueError(f"Example {i} has only {n_completion} completion tokens")
+    print(f"Length check: longest example {worst_total} tokens (limit {max_length}); "
+          f"shortest completion {worst_completion} tokens")
+    return worst_total
+
+
+def resolve_precision(choice: str):
+    """Return (torch_dtype, bf16_flag, fp16_flag)."""
     import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 
-    model_id = "google/medgemma-4b-it"
+    if choice == "auto":
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+            choice = "bf16"
+        else:
+            choice = "fp32"
+    if choice == "bf16":
+        return torch.bfloat16, True, False
+    if choice == "fp16":
+        return torch.float16, False, True
+    return torch.float32, False, False
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id, token=hf_token)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
 
-    if no_gpu:
-        print("CPU mode: loading in float32, no quantization")
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            torch_dtype=torch.float32,
-            device_map="cpu",
-            token=hf_token,
-        )
-    else:
-        print("GPU mode: loading with 4-bit NF4 quantization")
-        bnb_config = BitsAndBytesConfig(
+def load_model(model_id: str, quantize: str, dtype):
+    """Load MedGemma (Gemma 3 image-text-to-text) with optional 4-bit NF4 weights."""
+    import torch
+    from transformers import AutoModelForImageTextToText
+
+    token = os.environ.get("HF_TOKEN")
+    use_4bit = quantize == "4bit" or (quantize == "auto" and torch.cuda.is_available())
+    kwargs = {"dtype": dtype, "token": token, "attn_implementation": "eager"}
+    if use_4bit:
+        from transformers import BitsAndBytesConfig
+
+        kwargs["quantization_config"] = BitsAndBytesConfig(
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
+            bnb_4bit_compute_dtype=dtype,
         )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id,
-            quantization_config=bnb_config,
-            device_map="auto",
-            token=hf_token,
-        )
-
+        kwargs["device_map"] = {"": 0}
+    model = AutoModelForImageTextToText.from_pretrained(model_id, **kwargs)
     model.config.use_cache = False
-    device = next(model.parameters()).device
-    print(f"Model loaded on {device}")
-    return model, tokenizer
+    print(f"Model: {model_id} ({type(model).__name__}, 4-bit={use_4bit}, dtype={dtype})")
+    return model, use_4bit
 
 
-def attach_lora(model, no_gpu: bool):
-    """Attach LoRA adapter to model."""
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+def build_trainer(args, model, tokenizer, dataset, use_4bit, bf16, fp16):
+    """Configure LoRA + TRL SFTTrainer with completion-only loss."""
+    from peft import LoraConfig, prepare_model_for_kbit_training
+    from transformers import TrainerCallback
+    from trl import SFTConfig, SFTTrainer
 
-    if not no_gpu:
-        model = prepare_model_for_kbit_training(model)
+    class StopOnNonFiniteLoss(TrainerCallback):
+        def on_log(self, _args, state, control, logs=None, **kwargs):
+            loss = (logs or {}).get("loss")
+            if loss is not None and not math.isfinite(loss):
+                raise RuntimeError(f"Non-finite training loss at step {state.global_step}: {loss}")
 
-    lora_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
-        lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
+    if use_4bit:
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+
+    lora = LoraConfig(
+        r=args.lora_r,
+        lora_alpha=args.lora_alpha,
+        lora_dropout=args.lora_dropout,
+        target_modules=args.target_modules,
         bias="none",
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-    print("LoRA adapter attached")
-    return model
-
-
-def build_training_args(output_dir: str, max_steps: int, no_gpu: bool):
-    """Build SFTConfig training arguments."""
-    from trl import SFTConfig
-
-    kwargs = dict(
-        output_dir=output_dir,
-        num_train_epochs=3 if max_steps == -1 else 1,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=1 if no_gpu else 8,
-        learning_rate=2e-4,
-        max_seq_length=128 if no_gpu else 768,
-        lr_scheduler_type="cosine",
-        warmup_ratio=0.05,
-        logging_steps=1,
-        save_strategy="no" if max_steps == 1 else "epoch",
-        eval_strategy="no" if max_steps == 1 else "epoch",
-        fp16=False if no_gpu else True,
-        optim="adamw_torch" if no_gpu else "paged_adamw_8bit",
-        report_to="none",
-        dataset_text_field="text",
-    )
-    if max_steps > 0:
-        kwargs["max_steps"] = max_steps
-
-    return SFTConfig(**kwargs)
-
-
-def main():
-    """Run LoRA fine-tuning smoke test or full training."""
-    args = parse_args()
-
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        print("WARNING: HF_TOKEN not set. Will attempt unauthenticated access.")
-
-    print("=== MedGemma LoRA Training ===")
-    print(f"  data-dir   : {args.data_dir}")
-    print(f"  output-dir : {args.output_dir}")
-    print(f"  max-steps  : {args.max_steps} ({'smoke test' if args.max_steps == 1 else 'full'})")
-    print(f"  no-gpu     : {args.no_gpu}")
-
-    dataset = load_data(args.data_dir)
-    model, tokenizer = load_model_and_tokenizer(no_gpu=args.no_gpu, hf_token=hf_token)
-    model = attach_lora(model, no_gpu=args.no_gpu)
-
-    from trl import SFTTrainer
-
-    training_args = build_training_args(
+    has_eval = "validation" in dataset
+    config = SFTConfig(
         output_dir=args.output_dir,
+        num_train_epochs=args.epochs,
         max_steps=args.max_steps,
-        no_gpu=args.no_gpu,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+        learning_rate=args.learning_rate,
+        lr_scheduler_type="cosine",
+        warmup_steps=0.05,
+        weight_decay=0.0,
+        max_grad_norm=1.0,
+        max_length=args.max_length,
+        completion_only_loss=True,
+        packing=False,
+        bf16=bf16,
+        fp16=fp16,
+        optim="paged_adamw_8bit" if use_4bit else "adamw_torch",
+        logging_steps=5 if args.max_steps < 0 else 1,
+        eval_strategy="epoch" if has_eval and args.max_steps < 0 else "no",
+        save_strategy="epoch" if args.max_steps < 0 else "no",
+        save_total_limit=1,
+        report_to="none",
+        seed=args.seed,
+        dataloader_pin_memory=False,
     )
-
-    trainer = SFTTrainer(
+    return SFTTrainer(
         model=model,
+        args=config,
         train_dataset=dataset["train"],
-        eval_dataset=dataset["validation"] if args.max_steps != 1 else None,
-        args=training_args,
-        tokenizer=tokenizer,
+        eval_dataset=dataset["validation"] if has_eval else None,
+        processing_class=tokenizer,
+        peft_config=lora,
+        callbacks=[StopOnNonFiniteLoss()],
     )
 
-    print("Training started...")
-    trainer.train()
-    print("Training complete")
 
-    if args.max_steps != 1:
-        metrics = trainer.evaluate()
-        print(f"Final eval loss: {metrics.get('eval_loss', 'N/A'):.4f}")
+def main(argv=None):
+    """Validate data, train, save (and optionally push) the adapter."""
+    args = parse_args(argv)
+    from transformers import AutoTokenizer
 
-    output_path = Path(args.output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    trainer.model.save_pretrained(str(output_path))
-    tokenizer.save_pretrained(str(output_path))
-    print(f"Adapter saved to {output_path.resolve()}")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, token=os.environ.get("HF_TOKEN"))
+    dataset = load_data(args.data_dir)
+    for split in dataset:
+        check_lengths(tokenizer, dataset[split], args.max_length)
+
+    dtype, bf16, fp16 = resolve_precision(args.precision)
+    model, use_4bit = load_model(args.model_id, args.quantize, dtype)
+    trainer = build_trainer(args, model, tokenizer, dataset, use_4bit, bf16, fp16)
+    trainer.model.print_trainable_parameters()
+
+    result = trainer.train()
+    print(f"Training complete: {result.metrics}")
+    if trainer.eval_dataset is not None:
+        print(f"Eval: {trainer.evaluate()}")
+
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    trainer.model.save_pretrained(str(out))
+    tokenizer.save_pretrained(str(out))
+    print(f"Adapter saved to {out.resolve()}")
+
+    if args.push_to_hub:
+        trainer.model.push_to_hub(args.push_to_hub, token=os.environ.get("HF_TOKEN"), private=True)
+        tokenizer.push_to_hub(args.push_to_hub, token=os.environ.get("HF_TOKEN"), private=True)
+        print(f"Pushed (private) to https://huggingface.co/{args.push_to_hub}")
+    return trainer
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0 if main() else 1)

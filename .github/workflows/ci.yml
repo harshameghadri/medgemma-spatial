@@ -77,6 +77,32 @@ jobs:
       - name: Run tests
         run: pytest -v
 
+  lora:
+    name: LoRA training smoke (tiny Gemma 3, CPU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.in
+            requirements-train.txt
+            requirements-dev.txt
+      # Resolved together (not against the runtime lock), as on Kaggle where the
+      # training pins are installed into an existing environment.
+      - name: Install runtime ranges + training pins + dev dependencies
+        run: >-
+          pip install -r requirements.in -r requirements-train.txt -r requirements-dev.txt
+          --extra-index-url https://download.pytorch.org/whl/cpu
+      - name: Train 2 steps, check loss masking, load adapter for inference
+        run: |
+          set -o pipefail
+          pytest -v -rs tests/test_lora.py tests/test_inference.py | tee pytest.log
+          if grep -q SKIPPED pytest.log; then echo "::error::LoRA tests were skipped"; exit 1; fi
+
   audit:
     name: Dependency audit (pip-audit)
     runs-on: ubuntu-latest
@@ -89,12 +115,14 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Audit locked requirements
         run: pip-audit -r requirements.txt --disable-pip --no-deps --progress-spinner off
+      - name: Audit training requirements
+        run: pip-audit -r requirements-train.txt --disable-pip --no-deps --progress-spinner off
 
   docker:
     name: Docker build
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [lint, test]
+    needs: [lint, test, lora]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
