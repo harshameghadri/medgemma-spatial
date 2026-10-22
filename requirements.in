@@ -4,16 +4,16 @@
 #     --python-platform x86_64-manylinux_2_28 --emit-index-url \
 #     --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
 # On macOS install this file directly: pip install -r requirements.in
-numpy>=2.0,<2.4
+numpy>=2.4.6,<2.5
 pandas>=2.2,<3
-scipy>=1.13
+scipy>=1.18.1
 scikit-learn>=1.5
-anndata>=0.12,<0.13
+anndata>=0.13.4,<0.14
 scanpy>=1.12,<1.13
 squidpy>=1.8,<1.9
 celltypist>=1.7
 plotly>=5.24
-matplotlib>=3.9
+matplotlib>=3.11.2
 streamlit>=1.45,<2
 pillow>=13.0
 torch>=2.6
