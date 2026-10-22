@@ -114,18 +114,15 @@ def create_multimodal_prompt(features: Dict) -> str:
     str
         Prompt for MedGemma multimodal input
     """
-    annotation = features.get('annotation', {})
-    cell_types = annotation.get('cell_type_counts', {})
-    spatial = features.get('spatial_heterogeneity', {})
-    uncertainty = features.get('uncertainty', {})
+    from src.report_generation.prompt_builder import _fmt, _metric, summarise_composition
 
-    n_spots = sum(cell_types.values())
-    major_populations = {k: v for k, v in cell_types.items() if v / n_spots > 0.10}
-    immune_types = {k: v for k, v in cell_types.items()
-                    if any(x in k.lower() for x in ['t cell', 'b cell', 'macrophage',
-                                                      'nk cell', 'dendritic', 'neutrophil'])}
-
-    has_spatial_het = spatial.get('morans_i_mean', 0) > 0.3
+    comp = summarise_composition(features)
+    n_spots = comp['n_spots']
+    major_populations = comp['major_populations']
+    immune_types = comp['immune_cells']
+    morans_i = _metric(features, 'spatial_heterogeneity', 'morans_i_mean')
+    pred_entropy = _metric(features, 'uncertainty', 'mean_prediction_entropy')
+    has_spatial_het = morans_i is not None and morans_i > 0.3
 
     prompt = f"""You are a computational pathologist analyzing spatial transcriptomics data with corresponding H&E histology.
 
@@ -139,8 +136,8 @@ MOLECULAR DATA:
 - Total tissue spots: {n_spots}
 - Major cell populations (>10% abundance): {len(major_populations)} types
 - Immune cell diversity: {len(immune_types)} distinct immune populations
-- Spatial organization: {'heterogeneous' if has_spatial_het else 'uniform'} (Moran's I = {spatial.get('morans_i_mean', 'N/A'):.3f})
-- Prediction uncertainty: {uncertainty.get('mean_prediction_entropy', 'N/A'):.3f}
+- Spatial organization: {'heterogeneous' if has_spatial_het else 'uniform'} (Moran's I = {_fmt(morans_i, '.3f')})
+- Annotation uncertainty (entropy): {_fmt(pred_entropy, '.3f')}
 
 TASK:
 Generate a 200-word clinical pathology report that:
