@@ -21,7 +21,7 @@ aiosignal==1.4.0
     # via aiohttp
 altair==6.2.2
     # via streamlit
-anndata==0.12.19
+anndata==0.13.4
     # via
     #   -r requirements.in
     #   annsel
@@ -486,9 +486,12 @@ pyct==0.6.0
 pydantic==2.12.5
     # via
     #   ome-zarr-models
+    #   pydantic-settings
     #   pydantic-zarr
 pydantic-core==2.41.5
     # via pydantic
+pydantic-settings==2.16.1
+    # via scverse-misc
 pydantic-zarr==0.10.0
     # via ome-zarr-models
 pydeck==0.9.3
@@ -512,6 +515,10 @@ python-dateutil==2.9.0.post0
     #   matplotlib
     #   multiscale-spatial-image
     #   pandas
+python-dotenv==1.2.4
+    # via
+    #   pydantic-settings
+    #   scverse-misc
 python-multipart==0.0.32
     # via streamlit
 pytz==2026.5
@@ -592,7 +599,7 @@ scipy==1.18.1
     #   spatialdata
     #   statsmodels
     #   umap-learn
-scverse-misc==0.1.7
+scverse-misc[settings]==0.1.7
     # via
     #   anndata
     #   scanpy
@@ -698,6 +705,7 @@ typing-extensions==4.16.0
     #   aiohttp
     #   aiosignal
     #   altair
+    #   anndata
     #   anyio
     #   formulaic
     #   httpx2
@@ -706,6 +714,7 @@ typing-extensions==4.16.0
     #   omnipath
     #   pydantic
     #   pydantic-core
+    #   pydantic-settings
     #   referencing
     #   scanpy
     #   scverse-misc
@@ -719,7 +728,9 @@ typing-extensions==4.16.0
     #   xarray-dataclass
     #   zarr
 typing-inspection==0.4.4
-    # via pydantic
+    # via
+    #   pydantic
+    #   pydantic-settings
 tzdata==2026.5
     # via pandas
 umap-learn==0.5.12
