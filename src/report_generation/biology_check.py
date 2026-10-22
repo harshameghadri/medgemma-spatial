@@ -68,6 +68,7 @@ IMMUNE_GAIN = re.compile(
     r"(?:immune|T[\s-]cells?|NK|effector|lymphocytes?|cytotoxic)"
     r"|\b(?:immune|T[\s-]cell|NK[\s-]cell|lymphocyte|effector)\s+(?:cell\s+)?"
     r"(?:activation|recruitment|infiltration|stimulation|priming)\b")
+VALIDATION = re.compile(r"\bvalidat\w*|\bIHC\b|immunohistochem\w*|flow cytometry|\bassays?\b", _I)
 BLOCKADE = re.compile(r"\banti-|inhibit\w*|block\w*|antagon\w*|\btarget\w*|disrupt\w*|neutrali\w*"
                       r"|suppress\w*|modulat\w*", _I)
 
@@ -112,9 +113,24 @@ def omnipath_roles(path: str = str(ROLES)) -> Dict[str, frozenset]:
 
 
 def _one_sided(a: Tuple[str, ...], b: Tuple[str, ...], roles) -> bool:
-    """Both sides are only ligands, or only receptors: a list ('CCL2/CCL5'), not a pair."""
+    """A list, not a pair: both sides only ligands or only receptors ('CCL2/CCL5'), or co-ligands of one
+    receptor ('CXCL9/CXCL10', both bind CXCR3)."""
     sides = [set().union(*(roles.get(g, frozenset()) for g in side)) for side in (a, b)]
-    return any(sides[0] == sides[1] == {r} for r in ("ligand", "receptor"))
+    if any(sides[0] == sides[1] == {r} for r in ("ligand", "receptor")):
+        return True
+    partners = omnipath_partners()
+    return any(partners.get(x, set()) & partners.get(y, set()) for x in a for y in b)
+
+
+@functools.lru_cache(maxsize=1)
+def omnipath_partners() -> Dict[str, Set[str]]:
+    """Gene symbol -> its interaction partners in the snapshot."""
+    out: Dict[str, Set[str]] = {}
+    for pair in omnipath_pairs()[0]:
+        x, y = tuple(pair)
+        out.setdefault(x, set()).add(y)
+        out.setdefault(y, set()).add(x)
+    return out
 
 
 def _norm(token: str) -> str:
@@ -176,7 +192,7 @@ def check_sentence(sentence: str, prompt: Optional[str], genes: Set[str], pairs,
             out.append(_finding("unannotated_cell_type", sentence, ", ".join(extra)))
     mentioned = {s for _, _, syms in gene_mentions(sentence, genes) for s in syms}
     gain = IMMUNE_GAIN.search(sentence)
-    if mentioned & INHIBITORY_GENES and gain and not BLOCKADE.search(sentence):
+    if mentioned & INHIBITORY_GENES and gain and not BLOCKADE.search(sentence) and not VALIDATION.search(sentence):
         out.append(_finding("inhibitory_axis_as_activating", sentence,
                             f"{'/'.join(sorted(mentioned & INHIBITORY_GENES))} with '{gain.group(0)}'"))
     m = IMMUNOSUPPRESSANTS.search(sentence) or (in_therapy and SUPPRESSIVE_AIM.search(sentence))
