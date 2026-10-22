@@ -31,6 +31,7 @@ def test_hyphenated_names_resolve_to_one_gene_or_a_pair():
     ("CAFs may express PD-L1, which interacts with PD-1 on T cells, suppressing their activity.", False),
     ("Anti-PD-1 therapy restores the activation of T cells.", False),
     ("The TGF-β pathway promotes fibrosis and immune cell recruitment.", True),
+    ("Validate PD-L1 by IHC and assess the activation of T cells by flow cytometry.", False),
 ])
 def test_inhibitory_axis_described_as_activating(sentence, flagged):
     assert ("inhibitory_axis_as_activating" in checks(sentence)) is flagged
@@ -40,6 +41,8 @@ def test_ligand_lists_are_not_pairs_but_wrong_pairs_are():
     assert "pair_not_in_omnipath" not in checks("A role for the CCL2/CCL5 chemokine axis.")
     assert "pair_not_in_omnipath" in checks("Mediated by the CCL2/CX3CR1 axis.")
     assert "pair_not_in_omnipath" not in checks("Mediated by the CCL2/CCR2 axis.")
+    assert "pair_not_in_omnipath" not in checks("Effector T cells are recruited via CXCL9/CXCL10 and CXCR3.")
+    assert "pair_not_in_omnipath" not in checks("Dendritic cells present CD80/CD86 to CTLA-4.")
 
 
 def test_suppressive_aim_counts_only_in_the_therapy_section():
